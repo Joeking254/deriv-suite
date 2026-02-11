@@ -30,8 +30,10 @@ const placeTrade = document.getElementById("placeTrade");
 const tradeStatus = document.getElementById("tradeStatus");
 const tradeDuration = document.getElementById("tradeDuration");
 const tradeDurationUnit = document.getElementById("tradeDurationUnit");
+const durationHint = document.getElementById("durationHint");
 
 let currentSignal = "WAIT";
+let symbolMeta = {};
 
 const refreshAnalysis = document.getElementById("refreshAnalysis");
 const refreshScan = document.getElementById("refreshScan");
@@ -169,17 +171,21 @@ async function saveAuth() {
 }
 
 async function loadSymbols() {
-  const data = await getJSON("/api/symbols?limit=200");
-  symbolCount.textContent = data.count || data.symbols.length;
+  const data = await getJSON("/api/active-symbols?brief=false&open_only=true");
+  const symbols = data.symbols || [];
+  symbolCount.textContent = data.count || symbols.length;
   symbolSelect.innerHTML = "";
-  data.symbols.forEach((symbol) => {
+  symbolMeta = {};
+  symbols.forEach((item) => {
+    const symbol = item.symbol;
     const opt = document.createElement("option");
     opt.value = symbol;
-    opt.textContent = symbol;
+    opt.textContent = item.display_name ? `${item.display_name} (${symbol})` : symbol;
+    symbolMeta[symbol] = item;
     symbolSelect.appendChild(opt);
   });
-  if (data.symbols.length > 0) {
-    symbolSelect.value = data.symbols[0];
+  if (symbols.length > 0) {
+    symbolSelect.value = symbols[0].symbol;
   }
 }
 
@@ -217,11 +223,15 @@ async function loadAnalysis() {
     if (tradeStatus) {
       tradeStatus.textContent = `Trade status: ${data.signal === "WAIT" ? "No signal" : "Ready"}`;
     }
+    await loadContracts(symbol, data.signal);
   } catch (err) {
     clearConfirmations();
     addConfirmation("Failed to load analysis", "put");
     if (tradeStatus) {
       tradeStatus.textContent = "Trade status: error";
+    }
+    if (durationHint) {
+      durationHint.textContent = "Allowed duration: --";
     }
   }
 }
@@ -265,6 +275,50 @@ async function loadScan() {
     fail.className = "scan-card";
     fail.textContent = "Scan failed. Try again.";
     scanGrid.appendChild(fail);
+  }
+}
+
+function parseDuration(value) {
+  if (!value) return null;
+  const match = String(value).match(/^(\d+)([a-zA-Z]+)$/);
+  if (!match) return null;
+  return { amount: parseInt(match[1], 10), unit: match[2].toLowerCase() };
+}
+
+async function loadContracts(symbol, preferredDirection) {
+  if (!durationHint) return;
+  try {
+    const data = await getJSON(`/api/contracts?symbol=${encodeURIComponent(symbol)}`);
+    const available = data.available || [];
+    const filtered = available.filter((c) => c.contract_type === "CALL" || c.contract_type === "PUT");
+    if (!filtered.length) {
+      durationHint.textContent = "Allowed duration: none for CALL/PUT";
+      return;
+    }
+    let contract = filtered[0];
+    if (preferredDirection === "CALL" || preferredDirection === "PUT") {
+      const preferred = filtered.find((c) => c.contract_type === preferredDirection);
+      if (preferred) contract = preferred;
+    }
+
+    const min = parseDuration(contract.min_duration);
+    const max = parseDuration(contract.max_duration);
+    if (min && tradeDuration && tradeDurationUnit) {
+      tradeDuration.value = min.amount;
+      tradeDurationUnit.value = min.unit;
+      tradeDuration.min = min.amount;
+      if (max && max.unit === min.unit) {
+        tradeDuration.max = max.amount;
+      } else {
+        tradeDuration.removeAttribute("max");
+      }
+    }
+
+    const minLabel = contract.min_duration || "--";
+    const maxLabel = contract.max_duration || "--";
+    durationHint.textContent = `Allowed duration (${contract.contract_type}): ${minLabel} to ${maxLabel}`;
+  } catch (err) {
+    durationHint.textContent = "Allowed duration: unavailable";
   }
 }
 
