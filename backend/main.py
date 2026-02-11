@@ -286,6 +286,21 @@ async def scan(limit: int = Query(None, ge=1, le=20)) -> Dict[str, object]:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+@app.get("/api/balance")
+async def balance() -> Dict[str, object]:
+    ws = await _with_ws()
+    try:
+        resp = await ws.request({"balance": 1})
+        bal = resp.get("balance", {})
+        return {
+            "balance": bal.get("balance"),
+            "currency": bal.get("currency"),
+            "loginid": bal.get("loginid"),
+        }
+    finally:
+        await ws.close()
+
+
 @app.post("/api/trade")
 async def trade(request: Request) -> Dict[str, object]:
     trade_mode = (CONFIG.trade_mode or "auto").lower()

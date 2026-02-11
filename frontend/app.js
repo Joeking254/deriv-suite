@@ -4,6 +4,7 @@ const symbolSelect = document.getElementById("symbolSelect");
 const symbolCount = document.getElementById("symbolCount");
 const modeBadge = document.getElementById("modeBadge");
 const tradeModeBadge = document.getElementById("tradeModeBadge");
+const balanceValue = document.getElementById("balanceValue");
 const durationLabel = document.getElementById("durationLabel");
 const granularityLabel = document.getElementById("granularityLabel");
 const signalPill = document.getElementById("signalPill");
@@ -103,6 +104,21 @@ async function loadConfig() {
   }
 }
 
+async function loadBalance() {
+  if (!balanceValue) return;
+  try {
+    const data = await getJSON("/api/balance");
+    if (typeof data.balance === "number") {
+      const cur = data.currency ? ` ${data.currency}` : "";
+      balanceValue.textContent = `${data.balance.toFixed(2)}${cur}`;
+    } else {
+      balanceValue.textContent = "--";
+    }
+  } catch (err) {
+    balanceValue.textContent = "--";
+  }
+}
+
 async function loadAuth() {
   if (!modeSelect || !tokenStatus) return;
   try {
@@ -138,6 +154,7 @@ async function saveAuth() {
     if (demoToken) demoToken.value = "";
     if (liveToken) liveToken.value = "";
     await loadAuth();
+    await loadBalance();
   } catch (err) {
     tokenStatus.textContent = "Status: save failed";
   }
@@ -297,6 +314,7 @@ async function init() {
   await loadHealth();
   await loadConfig();
   await loadAuth();
+  await loadBalance();
   await loadSymbols();
   await loadAnalysis();
   await loadScan();
