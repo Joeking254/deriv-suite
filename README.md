@@ -1,7 +1,8 @@
 # Deriv Trading Bot Suite
 
 This repo contains a minimal, production-ready Deriv trading bot that runs on a VPS.
-It includes a dashboard that analyzes markets using RSI, EMA, MACD, and Bollinger Bands.
+It includes a dashboard that analyzes markets using RSI, EMA, MACD, and Bollinger Bands,
+and can place manual trades based on the active signal.
 Confirmation thresholds, contract filtering, multi-timeframe checks, and token mode are configurable in .env.
 
 Structure:

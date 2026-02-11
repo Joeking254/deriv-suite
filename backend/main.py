@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import os
 import secrets
@@ -23,6 +24,7 @@ from deriv_ws import DerivAPIError, DerivWS  # noqa: E402
 from market_data import extract_closes, fetch_symbols, get_candles  # noqa: E402
 from strategy import compute_indicators  # noqa: E402
 from token_store import load_tokens, resolve_token, update_tokens  # noqa: E402
+from trading import place_trade  # noqa: E402
 
 load_dotenv(ROOT / "bot" / ".env")
 CONFIG = load_config()
@@ -38,6 +40,7 @@ DASH_ALLOWED_IPS = [ip.strip() for ip in os.getenv("DASH_ALLOWED_IPS", "").split
 TRUST_PROXY = os.getenv("TRUST_PROXY", "false").strip().lower() in ("1", "true", "yes", "y")
 
 app = FastAPI(title="Deriv Signal Desk")
+TRADE_LOCK = asyncio.Lock()
 
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
@@ -280,3 +283,52 @@ async def scan(limit: int = Query(None, ge=1, le=20)) -> Dict[str, object]:
         return {"results": results, "count": len(results)}
     except DerivAPIError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@app.post("/api/trade")
+async def trade(request: Request) -> Dict[str, object]:
+    if CONFIG.dry_run or CONFIG.paper_trade:
+        raise HTTPException(status_code=400, detail="Disable DRY_RUN and PAPER_TRADE to execute trades")
+
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from exc
+
+    symbol = str(payload.get("symbol", "")).strip()
+    direction = str(payload.get("direction", "")).strip().upper()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol is required")
+
+    indicators = await _analyze_symbol(symbol)
+    signal = indicators.get("signal")
+    if direction:
+        if direction not in ("CALL", "PUT"):
+            raise HTTPException(status_code=400, detail="direction must be CALL or PUT")
+        if signal not in ("CALL", "PUT") or direction != signal:
+            raise HTTPException(status_code=400, detail="direction does not match current signal")
+    else:
+        direction = signal if signal in ("CALL", "PUT") else ""
+
+    if direction not in ("CALL", "PUT"):
+        raise HTTPException(status_code=400, detail="No trade signal for this symbol")
+
+    token, mode = resolve_token(CONFIG.api_token, CONFIG.account_mode, CONFIG.token_store_path)
+    if not token:
+        raise HTTPException(status_code=400, detail="Missing API token for selected mode")
+
+    async with TRADE_LOCK:
+        ws = DerivWS(CONFIG.app_id)
+        try:
+            await ws.connect()
+            await ws.request({"authorize": token})
+            profit = await place_trade(ws, symbol, direction, CONFIG)
+        finally:
+            await ws.close()
+
+    return {
+        "symbol": symbol,
+        "direction": direction,
+        "profit": profit,
+        "mode": mode,
+    }

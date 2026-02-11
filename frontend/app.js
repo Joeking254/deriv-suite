@@ -24,6 +24,10 @@ const demoToken = document.getElementById("demoToken");
 const liveToken = document.getElementById("liveToken");
 const saveTokens = document.getElementById("saveTokens");
 const tokenStatus = document.getElementById("tokenStatus");
+const placeTrade = document.getElementById("placeTrade");
+const tradeStatus = document.getElementById("tradeStatus");
+
+let currentSignal = "WAIT";
 
 const refreshAnalysis = document.getElementById("refreshAnalysis");
 const refreshScan = document.getElementById("refreshScan");
@@ -44,6 +48,7 @@ function setStatus(ok) {
 }
 
 function setSignal(signal) {
+  currentSignal = signal || "WAIT";
   signalPill.textContent = signal || "WAIT";
   signalPill.style.color = "var(--signal-wait)";
   signalPill.style.background = "rgba(141, 124, 104, 0.16)";
@@ -180,9 +185,15 @@ async function loadAnalysis() {
     } else {
       addConfirmation("No confirmations yet", "wait");
     }
+    if (tradeStatus) {
+      tradeStatus.textContent = `Trade status: ${data.signal === "WAIT" ? "No signal" : "Ready"}`;
+    }
   } catch (err) {
     clearConfirmations();
     addConfirmation("Failed to load analysis", "put");
+    if (tradeStatus) {
+      tradeStatus.textContent = "Trade status: error";
+    }
   }
 }
 
@@ -242,6 +253,39 @@ scanNow.addEventListener("click", loadScan);
 symbolSelect.addEventListener("change", loadAnalysis);
 if (saveTokens) {
   saveTokens.addEventListener("click", saveAuth);
+}
+
+async function placeTradeNow() {
+  if (!placeTrade || !tradeStatus) return;
+  if (currentSignal === "WAIT") {
+    tradeStatus.textContent = "Trade status: no signal to trade";
+    return;
+  }
+  const symbol = symbolSelect.value;
+  if (!symbol) return;
+  placeTrade.disabled = true;
+  tradeStatus.textContent = "Trade status: placing trade...";
+  try {
+    const res = await fetch("/api/trade", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol, direction: currentSignal }),
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || "Trade failed");
+    }
+    const data = await res.json();
+    tradeStatus.textContent = `Trade status: ${data.direction} closed (profit ${data.profit})`;
+  } catch (err) {
+    tradeStatus.textContent = "Trade status: failed";
+  } finally {
+    placeTrade.disabled = false;
+  }
+}
+
+if (placeTrade) {
+  placeTrade.addEventListener("click", placeTradeNow);
 }
 
 async function init() {

@@ -1,10 +1,24 @@
 import json
 import os
+from pathlib import Path
 from typing import Dict, Tuple
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _resolve_path(value: str) -> str:
+    path = Path(value)
+    if path.is_absolute():
+        return str(path)
+    return str((ROOT / path).resolve())
+
+
 def _default_path() -> str:
-    return os.getenv("TOKEN_STORE_PATH", os.path.join(os.path.dirname(__file__), "tokens.json"))
+    configured = os.getenv("TOKEN_STORE_PATH", "").strip()
+    if configured:
+        return _resolve_path(configured)
+    return str((Path(__file__).resolve().parent / "tokens.json").resolve())
 
 
 def _normalize_mode(value: str) -> str:
@@ -12,7 +26,7 @@ def _normalize_mode(value: str) -> str:
 
 
 def load_tokens(path: str | None = None) -> Dict[str, str]:
-    token_path = path or _default_path()
+    token_path = _resolve_path(path) if path else _default_path()
     if not os.path.exists(token_path):
         return {"active_mode": "demo", "demo_token": "", "live_token": ""}
     try:
@@ -28,7 +42,7 @@ def load_tokens(path: str | None = None) -> Dict[str, str]:
 
 
 def save_tokens(data: Dict[str, str], path: str | None = None) -> None:
-    token_path = path or _default_path()
+    token_path = _resolve_path(path) if path else _default_path()
     os.makedirs(os.path.dirname(token_path), exist_ok=True)
     payload = {
         "active_mode": _normalize_mode(data.get("active_mode", "demo")),
