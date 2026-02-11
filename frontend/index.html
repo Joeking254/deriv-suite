@@ -134,6 +134,31 @@
         </div>
       </section>
 
+      <section class="grid">
+        <div class="card" data-reveal>
+          <div class="card-header">
+            <h2>Account & Tokens</h2>
+            <p>Set demo/live tokens and choose the active mode.</p>
+          </div>
+          <label class="input-label" for="modeSelect">Active Mode</label>
+          <select id="modeSelect" class="select">
+            <option value="demo">Demo</option>
+            <option value="live">Live</option>
+          </select>
+
+          <label class="input-label" for="demoToken">Demo API Token</label>
+          <input id="demoToken" class="input" type="password" placeholder="Paste demo token" />
+
+          <label class="input-label" for="liveToken">Live API Token</label>
+          <input id="liveToken" class="input" type="password" placeholder="Paste live token" />
+
+          <div class="hero-actions">
+            <button class="btn primary" id="saveTokens">Save Tokens</button>
+          </div>
+          <p class="hint" id="tokenStatus">Status: --</p>
+        </div>
+      </section>
+
       <section class="scan" data-reveal>
         <div class="scan-header">
           <div>

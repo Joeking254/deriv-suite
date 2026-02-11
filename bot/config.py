@@ -36,6 +36,8 @@ def _parse_bool(value: str, default: bool) -> bool:
 class Config:
     app_id: str
     api_token: str
+    account_mode: str
+    token_store_path: str
     currency: str
 
     markets: Optional[List[str]]
@@ -92,6 +94,8 @@ class Config:
 def load_config() -> Config:
     app_id = os.getenv("APP_ID", "").strip()
     api_token = os.getenv("API_TOKEN", "").strip()
+    account_mode = os.getenv("ACCOUNT_MODE", "demo").strip().lower()
+    token_store_path = os.getenv("TOKEN_STORE_PATH", "").strip()
     currency = os.getenv("CURRENCY", "USD").strip()
 
     markets = _parse_list(os.getenv("MARKETS", "all"))
@@ -146,12 +150,11 @@ def load_config() -> Config:
 
     if not app_id:
         raise ValueError("APP_ID is required")
-    if not api_token:
-        raise ValueError("API_TOKEN is required")
-
     return Config(
         app_id=app_id,
         api_token=api_token,
+        account_mode=account_mode or "demo",
+        token_store_path=token_store_path,
         currency=currency,
         markets=markets,
         submarkets=submarkets,

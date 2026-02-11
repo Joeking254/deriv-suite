@@ -22,6 +22,7 @@ from config import load_config  # noqa: E402
 from deriv_ws import DerivAPIError, DerivWS  # noqa: E402
 from market_data import extract_closes, fetch_symbols, get_candles  # noqa: E402
 from strategy import compute_indicators  # noqa: E402
+from token_store import load_tokens, resolve_token, update_tokens  # noqa: E402
 
 load_dotenv(ROOT / "bot" / ".env")
 CONFIG = load_config()
@@ -81,10 +82,22 @@ async def enforce_access(request: Request, call_next):
 
 
 async def _with_ws() -> DerivWS:
+    token, mode = resolve_token(CONFIG.api_token, CONFIG.account_mode, CONFIG.token_store_path)
+    if not token:
+        raise HTTPException(status_code=503, detail="Missing API token for selected mode")
     ws = DerivWS(CONFIG.app_id)
     await ws.connect()
-    await ws.request({"authorize": CONFIG.api_token})
+    await ws.request({"authorize": token})
     return ws
+
+
+def _token_status() -> Dict[str, object]:
+    tokens = load_tokens(CONFIG.token_store_path)
+    return {
+        "active_mode": tokens.get("active_mode", "demo"),
+        "demo_token_set": bool(tokens.get("demo_token")),
+        "live_token_set": bool(tokens.get("live_token")),
+    }
 
 
 async def _get_symbols_cached() -> List[str]:
@@ -157,9 +170,13 @@ def index() -> FileResponse:
 
 @app.get("/api/health")
 def health() -> Dict[str, object]:
+    status = _token_status()
     return {
         "status": "ok",
         "app_id": CONFIG.app_id,
+        "active_mode": status["active_mode"],
+        "demo_token_set": status["demo_token_set"],
+        "live_token_set": status["live_token_set"],
         "timestamp": int(time.time()),
     }
 
@@ -167,6 +184,7 @@ def health() -> Dict[str, object]:
 @app.get("/api/config")
 def config() -> Dict[str, object]:
     return {
+        "account_mode": CONFIG.account_mode,
         "markets": CONFIG.markets,
         "submarkets": CONFIG.submarkets,
         "symbols": CONFIG.symbols,
@@ -197,6 +215,38 @@ def config() -> Dict[str, object]:
         "paper_trade": CONFIG.paper_trade,
         "dry_run": CONFIG.dry_run,
     }
+
+
+@app.get("/api/auth")
+def auth_status() -> Dict[str, object]:
+    return _token_status()
+
+
+@app.post("/api/auth")
+async def auth_update(request: Request) -> Dict[str, object]:
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from exc
+
+    active_mode = payload.get("active_mode")
+    demo_token = payload.get("demo_token")
+    live_token = payload.get("live_token")
+
+    tokens = update_tokens(
+        active_mode=active_mode,
+        demo_token=demo_token if isinstance(demo_token, str) and demo_token.strip() else None,
+        live_token=live_token if isinstance(live_token, str) and live_token.strip() else None,
+        token_store_path=CONFIG.token_store_path,
+    )
+
+    active_mode = tokens.get("active_mode", "demo")
+    if active_mode == "demo" and not tokens.get("demo_token") and not CONFIG.api_token:
+        raise HTTPException(status_code=400, detail="Demo token not set")
+    if active_mode == "live" and not tokens.get("live_token"):
+        raise HTTPException(status_code=400, detail="Live token not set")
+
+    return _token_status()
 
 
 @app.get("/api/symbols")

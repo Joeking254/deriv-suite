@@ -11,6 +11,7 @@ from logger import setup_logger
 from market_data import extract_closes, fetch_symbols, get_candles
 from risk import RiskManager
 from strategy import compute_indicators
+from token_store import resolve_token
 
 
 def _duration_to_seconds(duration: int, unit: str) -> int | None:
@@ -131,11 +132,22 @@ async def main() -> None:
 
     while True:
         try:
+            token, mode = resolve_token(config.api_token, config.account_mode, config.token_store_path)
+            if not token:
+                logger.warning("Missing API token for selected mode. Sleeping 30s")
+                await asyncio.sleep(30)
+                continue
+
             await ws.connect()
-            auth = await ws.request({"authorize": config.api_token})
+            auth = await ws.request({"authorize": token})
             acct = auth.get("authorize", {})
-            logger.info("Authorized | loginid=%s currency=%s", acct.get("loginid"), acct.get("currency"))
-            await _notify(config, logger, f"Deriv bot authorized: {acct.get('loginid')}")
+            logger.info(
+                "Authorized | loginid=%s currency=%s mode=%s",
+                acct.get("loginid"),
+                acct.get("currency"),
+                mode,
+            )
+            await _notify(config, logger, f"Deriv bot authorized ({mode}): {acct.get('loginid')}")
 
             symbols = await fetch_symbols(ws, config, logger)
             if not symbols:

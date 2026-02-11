@@ -19,6 +19,11 @@ const confirmScoreValue = document.getElementById("confirmScoreValue");
 const confirmRequiredValue = document.getElementById("confirmRequiredValue");
 const confirmations = document.getElementById("confirmations");
 const scanGrid = document.getElementById("scanGrid");
+const modeSelect = document.getElementById("modeSelect");
+const demoToken = document.getElementById("demoToken");
+const liveToken = document.getElementById("liveToken");
+const saveTokens = document.getElementById("saveTokens");
+const tokenStatus = document.getElementById("tokenStatus");
 
 const refreshAnalysis = document.getElementById("refreshAnalysis");
 const refreshScan = document.getElementById("refreshScan");
@@ -86,6 +91,46 @@ async function loadConfig() {
   const strategyName = document.getElementById("strategyName");
   if (strategyName) {
     strategyName.textContent = "RSI + EMA + MACD + BB";
+  }
+}
+
+async function loadAuth() {
+  if (!modeSelect || !tokenStatus) return;
+  try {
+    const data = await getJSON("/api/auth");
+    modeSelect.value = data.active_mode || "demo";
+    const demoSet = data.demo_token_set ? "set" : "missing";
+    const liveSet = data.live_token_set ? "set" : "missing";
+    tokenStatus.textContent = `Status: demo ${demoSet} | live ${liveSet}`;
+  } catch (err) {
+    tokenStatus.textContent = "Status: unable to load";
+  }
+}
+
+async function saveAuth() {
+  if (!modeSelect || !tokenStatus) return;
+  const payload = { active_mode: modeSelect.value };
+  if (demoToken && demoToken.value.trim().length > 0) {
+    payload.demo_token = demoToken.value.trim();
+  }
+  if (liveToken && liveToken.value.trim().length > 0) {
+    payload.live_token = liveToken.value.trim();
+  }
+  try {
+    const res = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || "Failed");
+    }
+    if (demoToken) demoToken.value = "";
+    if (liveToken) liveToken.value = "";
+    await loadAuth();
+  } catch (err) {
+    tokenStatus.textContent = "Status: save failed";
   }
 }
 
@@ -195,11 +240,15 @@ refreshAnalysis.addEventListener("click", loadAnalysis);
 refreshScan.addEventListener("click", loadScan);
 scanNow.addEventListener("click", loadScan);
 symbolSelect.addEventListener("change", loadAnalysis);
+if (saveTokens) {
+  saveTokens.addEventListener("click", saveAuth);
+}
 
 async function init() {
   revealElements();
   await loadHealth();
   await loadConfig();
+  await loadAuth();
   await loadSymbols();
   await loadAnalysis();
   await loadScan();
