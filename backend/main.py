@@ -94,6 +94,18 @@ async def _with_ws() -> DerivWS:
     return ws
 
 
+async def _with_ws_public() -> DerivWS:
+    ws = DerivWS(CONFIG.app_id)
+    await ws.connect()
+    token, _ = resolve_token(CONFIG.api_token, CONFIG.account_mode, CONFIG.token_store_path)
+    if token:
+        try:
+            await ws.request({"authorize": token})
+        except DerivAPIError:
+            pass
+    return ws
+
+
 def _token_status() -> Dict[str, object]:
     tokens = load_tokens(CONFIG.token_store_path)
     return {
@@ -260,6 +272,59 @@ async def symbols(limit: int = Query(100, ge=1, le=300)) -> Dict[str, object]:
     except DerivAPIError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return {"symbols": symbols_list[:limit], "count": len(symbols_list)}
+
+
+@app.get("/api/active-symbols")
+async def active_symbols(
+    product_type: str = Query("basic"),
+    brief: bool = Query(True),
+    open_only: bool = Query(True),
+) -> Dict[str, object]:
+    ws = await _with_ws_public()
+    try:
+        resp = await ws.request(
+            {
+                "active_symbols": "brief" if brief else "full",
+                "product_type": product_type,
+            }
+        )
+    except DerivAPIError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        await ws.close()
+
+    symbols = resp.get("active_symbols", [])
+    if open_only:
+        symbols = [s for s in symbols if s.get("exchange_is_open") in (1, "1", True)]
+    return {"symbols": symbols, "count": len(symbols)}
+
+
+@app.get("/api/contracts")
+async def contracts(
+    symbol: str = Query(..., min_length=2),
+    product_type: str = Query("basic"),
+) -> Dict[str, object]:
+    ws = await _with_ws_public()
+    try:
+        resp = await ws.request({"contracts_for": symbol, "product_type": product_type})
+        return resp.get("contracts_for", {})
+    except DerivAPIError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        await ws.close()
+
+
+@app.get("/api/trading-times")
+async def trading_times(date: str | None = None) -> Dict[str, object]:
+    ws = await _with_ws_public()
+    try:
+        payload = {"trading_times": date} if date else {"trading_times": "today"}
+        resp = await ws.request(payload)
+        return resp.get("trading_times", {})
+    except DerivAPIError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        await ws.close()
 
 
 @app.get("/api/analysis")

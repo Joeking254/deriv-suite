@@ -4,6 +4,10 @@ This repo contains a minimal, production-ready Deriv trading bot that runs on a 
 It includes a dashboard that analyzes markets using RSI, EMA, MACD, and Bollinger Bands,
 and can place manual trades based on the active signal.
 The API exposes an authenticated balance endpoint at /api/balance.
+Market data endpoints:
+- `/api/active-symbols` (live trading pairs with market metadata)
+- `/api/contracts?symbol=R_100` (available contracts and durations)
+- `/api/trading-times` (market hours)
 Confirmation thresholds, contract filtering, multi-timeframe checks, and token mode are configurable in .env.
 
 Structure:
