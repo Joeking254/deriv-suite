@@ -32,6 +32,7 @@ CONFIG = load_config()
 SYMBOL_CACHE: Dict[str, object] = {"ts": 0.0, "data": []}
 ANALYSIS_CACHE: Dict[str, Dict[str, object]] = {}
 CONTRACT_CACHE: Dict[str, Dict[str, object]] = {}
+PROBE_CACHE: Dict[str, Dict[str, object]] = {}
 SYMBOL_CACHE_TTL = int(os.getenv("SYMBOL_CACHE_TTL", "300"))
 ANALYSIS_CACHE_TTL = int(os.getenv("ANALYSIS_CACHE_TTL", "20"))
 SCAN_LIMIT = int(os.getenv("SCAN_LIMIT", "6"))
@@ -193,6 +194,59 @@ def _select_contract(available: List[dict], direction: str) -> Optional[dict]:
     return candidates[0]
 
 
+async def _probe_duration(symbol: str, direction: str) -> Optional[Tuple[int, str]]:
+    ws = await _with_ws_public()
+    try:
+        candidates = [
+            (1, "t"),
+            (2, "t"),
+            (5, "t"),
+            (10, "t"),
+            (15, "t"),
+            (30, "t"),
+            (1, "m"),
+            (2, "m"),
+            (5, "m"),
+            (10, "m"),
+            (15, "m"),
+            (30, "m"),
+            (1, "h"),
+            (2, "h"),
+            (1, "d"),
+        ]
+        for amount, unit in candidates:
+            try:
+                await ws.request(
+                    {
+                        "proposal": 1,
+                        "amount": CONFIG.stake,
+                        "basis": "stake",
+                        "contract_type": direction,
+                        "currency": CONFIG.currency,
+                        "duration": amount,
+                        "duration_unit": unit,
+                        "symbol": symbol,
+                    }
+                )
+                return amount, unit
+            except DerivAPIError:
+                continue
+        return None
+    finally:
+        await ws.close()
+
+
+async def _probe_duration_cached(symbol: str, direction: str) -> Optional[Tuple[int, str]]:
+    key = f"{symbol}:{direction}"
+    now = time.time()
+    cached = PROBE_CACHE.get(key)
+    if cached and now - float(cached.get("ts", 0)) < 3600:
+        return cached.get("data")
+    result = await _probe_duration(symbol, direction)
+    PROBE_CACHE[key] = {"ts": now, "data": result}
+    return result
+
+
 async def _trade_params(symbol: str, direction: str) -> Optional[Dict[str, object]]:
     data = await _get_contracts_cached(symbol)
     available = data.get("available", [])
@@ -204,6 +258,10 @@ async def _trade_params(symbol: str, direction: str) -> Optional[Dict[str, objec
     parsed = _parse_duration(min_duration) if min_duration else None
     duration_value = parsed[0] if parsed else None
     duration_unit = parsed[1] if parsed else None
+    if duration_value is None or duration_unit is None:
+        probed = await _probe_duration_cached(symbol, direction)
+        if probed:
+            duration_value, duration_unit = probed
     return {
         "contract_type": contract.get("contract_type"),
         "min_duration": min_duration,
