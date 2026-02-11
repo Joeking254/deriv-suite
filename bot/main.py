@@ -243,7 +243,8 @@ async def main() -> None:
                         if config.paper_trade:
                             profit = await simulate_trade(ws, symbol, direction, entry_price, config, logger)
                         else:
-                            profit = await place_trade(ws, symbol, direction, config, logger)
+                            result = await place_trade(ws, symbol, direction, config, logger)
+                            profit = float(result.get("profit", 0))
                         risk.record_trade(profit)
                         last_trade_ts = time.time()
                         if config.alert_on_trade:

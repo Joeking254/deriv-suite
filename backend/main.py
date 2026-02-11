@@ -342,13 +342,17 @@ async def trade(request: Request) -> Dict[str, object]:
         try:
             await ws.connect()
             await ws.request({"authorize": token})
-            profit = await place_trade(ws, symbol, direction, CONFIG)
+            result = await place_trade(ws, symbol, direction, CONFIG)
+        except DerivAPIError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         finally:
             await ws.close()
 
     return {
         "symbol": symbol,
         "direction": direction,
-        "profit": profit,
         "mode": mode,
+        **result,
     }

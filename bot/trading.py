@@ -1,7 +1,7 @@
 from deriv_ws import DerivAPIError, DerivWS
 
 
-async def place_trade(ws: DerivWS, symbol: str, direction: str, config, logger=None) -> float:
+async def place_trade(ws: DerivWS, symbol: str, direction: str, config, logger=None) -> dict:
     proposal = await ws.request(
         {
             "proposal": 1,
@@ -21,7 +21,8 @@ async def place_trade(ws: DerivWS, symbol: str, direction: str, config, logger=N
         raise DerivAPIError("proposal", "Missing proposal id")
 
     buy = await ws.request({"buy": prop_id, "price": ask_price})
-    contract_id = buy.get("buy", {}).get("contract_id")
+    buy_info = buy.get("buy", {})
+    contract_id = buy_info.get("contract_id")
     if not contract_id:
         raise DerivAPIError("buy", "Missing contract id")
 
@@ -35,8 +36,8 @@ async def place_trade(ws: DerivWS, symbol: str, direction: str, config, logger=N
     poc = final_msg.get("proposal_open_contract", {})
     profit = poc.get("profit")
     if profit is None:
-        sell_price = float(poc.get("sell_price", 0))
-        buy_price = float(poc.get("buy_price", 0))
+        sell_price = float(poc.get("sell_price", 0) or 0)
+        buy_price = float(poc.get("buy_price", 0) or 0)
         profit = sell_price - buy_price
 
     if logger:
@@ -47,4 +48,12 @@ async def place_trade(ws: DerivWS, symbol: str, direction: str, config, logger=N
             profit,
             poc.get("status"),
         )
-    return float(profit)
+    return {
+        "contract_id": contract_id,
+        "buy_price": float(poc.get("buy_price", buy_info.get("buy_price") or ask_price) or 0),
+        "sell_price": float(poc.get("sell_price", 0) or 0),
+        "profit": float(profit),
+        "status": poc.get("status"),
+        "payout": poc.get("payout"),
+        "currency": config.currency,
+    }

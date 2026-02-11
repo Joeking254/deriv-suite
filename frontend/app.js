@@ -285,7 +285,7 @@ async function placeTradeNow() {
   const symbol = symbolSelect.value;
   if (!symbol) return;
   placeTrade.disabled = true;
-  tradeStatus.textContent = "Trade status: placing trade...";
+  tradeStatus.textContent = "Trade status: placing trade (wait for contract close)...";
   try {
     const res = await fetch("/api/trade", {
       method: "POST",
@@ -293,13 +293,26 @@ async function placeTradeNow() {
       body: JSON.stringify({ symbol, direction: currentSignal }),
     });
     if (!res.ok) {
-      const detail = await res.text();
-      throw new Error(detail || "Trade failed");
+      const text = await res.text();
+      let detail = text || "Trade failed";
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed && parsed.detail) {
+          detail = parsed.detail;
+        }
+      } catch (err) {
+        // ignore JSON parse errors
+      }
+      throw new Error(detail);
     }
     const data = await res.json();
-    tradeStatus.textContent = `Trade status: ${data.direction} closed (profit ${data.profit})`;
+    const profit = typeof data.profit === "number" ? data.profit.toFixed(2) : data.profit;
+    const currency = data.currency ? ` ${data.currency}` : "";
+    const status = data.status ? ` | ${data.status}` : "";
+    const contract = data.contract_id ? ` | id ${data.contract_id}` : "";
+    tradeStatus.textContent = `Trade status: ${data.direction} closed (profit ${profit}${currency})${status}${contract}`;
   } catch (err) {
-    tradeStatus.textContent = "Trade status: failed";
+    tradeStatus.textContent = `Trade status: failed (${err.message || "unknown error"})`;
   } finally {
     placeTrade.disabled = false;
   }
