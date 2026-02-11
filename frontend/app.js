@@ -223,7 +223,7 @@ async function loadAnalysis() {
     if (tradeStatus) {
       tradeStatus.textContent = `Trade status: ${data.signal === "WAIT" ? "No signal" : "Ready"}`;
     }
-    await loadContracts(symbol, data.signal);
+    applyTradeParams(data.trade, data.trade_params);
   } catch (err) {
     clearConfirmations();
     addConfirmation("Failed to load analysis", "put");
@@ -278,48 +278,31 @@ async function loadScan() {
   }
 }
 
-function parseDuration(value) {
-  if (!value) return null;
-  const match = String(value).match(/^(\d+)([a-zA-Z]+)$/);
-  if (!match) return null;
-  return { amount: parseInt(match[1], 10), unit: match[2].toLowerCase() };
-}
-
-async function loadContracts(symbol, preferredDirection) {
+function applyTradeParams(recommended, tradeParams) {
   if (!durationHint) return;
-  try {
-    const data = await getJSON(`/api/contracts?symbol=${encodeURIComponent(symbol)}`);
-    const available = data.available || [];
-    const filtered = available.filter((c) => c.contract_type === "CALL" || c.contract_type === "PUT");
-    if (!filtered.length) {
-      durationHint.textContent = "Allowed duration: none for CALL/PUT";
-      return;
-    }
-    let contract = filtered[0];
-    if (preferredDirection === "CALL" || preferredDirection === "PUT") {
-      const preferred = filtered.find((c) => c.contract_type === preferredDirection);
-      if (preferred) contract = preferred;
-    }
-
-    const min = parseDuration(contract.min_duration);
-    const max = parseDuration(contract.max_duration);
-    if (min && tradeDuration && tradeDurationUnit) {
-      tradeDuration.value = min.amount;
-      tradeDurationUnit.value = min.unit;
-      tradeDuration.min = min.amount;
-      if (max && max.unit === min.unit) {
-        tradeDuration.max = max.amount;
-      } else {
-        tradeDuration.removeAttribute("max");
-      }
-    }
-
-    const minLabel = contract.min_duration || "--";
-    const maxLabel = contract.max_duration || "--";
-    durationHint.textContent = `Allowed duration (${contract.contract_type}): ${minLabel} to ${maxLabel}`;
-  } catch (err) {
-    durationHint.textContent = "Allowed duration: unavailable";
+  const trade = recommended || null;
+  if (!trade && tradeParams) {
+    trade = tradeParams.CALL || tradeParams.PUT || null;
   }
+  if (!trade) {
+    durationHint.textContent = "Allowed duration: unavailable";
+    return;
+  }
+
+  if (tradeDuration && tradeDurationUnit && trade.duration && trade.duration_unit) {
+    tradeDuration.value = trade.duration;
+    tradeDurationUnit.value = trade.duration_unit;
+  }
+  if (tradeDuration) {
+    if (trade.min_duration && trade.min_duration.startsWith(String(trade.duration))) {
+      tradeDuration.min = trade.duration;
+    }
+  }
+
+  const minLabel = trade.min_duration || "--";
+  const maxLabel = trade.max_duration || "--";
+  const contractLabel = trade.contract_type ? ` (${trade.contract_type})` : "";
+  durationHint.textContent = `Allowed duration${contractLabel}: ${minLabel} to ${maxLabel}`;
 }
 
 function revealElements() {

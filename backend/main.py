@@ -5,7 +5,7 @@ import secrets
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -31,6 +31,7 @@ CONFIG = load_config()
 
 SYMBOL_CACHE: Dict[str, object] = {"ts": 0.0, "data": []}
 ANALYSIS_CACHE: Dict[str, Dict[str, object]] = {}
+CONTRACT_CACHE: Dict[str, Dict[str, object]] = {}
 SYMBOL_CACHE_TTL = int(os.getenv("SYMBOL_CACHE_TTL", "300"))
 ANALYSIS_CACHE_TTL = int(os.getenv("ANALYSIS_CACHE_TTL", "20"))
 SCAN_LIMIT = int(os.getenv("SCAN_LIMIT", "6"))
@@ -106,6 +107,112 @@ async def _with_ws_public() -> DerivWS:
     return ws
 
 
+def _parse_duration(value: str) -> Optional[Tuple[int, str]]:
+    if not value:
+        return None
+    value = value.strip()
+    num = ""
+    unit = ""
+    for ch in value:
+        if ch.isdigit():
+            num += ch
+        else:
+            unit += ch
+    if not num or not unit:
+        return None
+    return int(num), unit.lower()
+
+
+def _duration_to_seconds(amount: int, unit: str) -> Optional[int]:
+    unit = unit.lower()
+    if unit == "s":
+        return amount
+    if unit == "m":
+        return amount * 60
+    if unit == "h":
+        return amount * 3600
+    if unit == "d":
+        return amount * 86400
+    return None
+
+
+def _duration_in_range(amount: int, unit: str, min_d: str | None, max_d: str | None) -> bool:
+    if not min_d or not max_d:
+        return True
+    parsed_min = _parse_duration(min_d)
+    parsed_max = _parse_duration(max_d)
+    if not parsed_min or not parsed_max:
+        return True
+
+    min_val, min_unit = parsed_min
+    max_val, max_unit = parsed_max
+
+    if unit == min_unit == max_unit:
+        return min_val <= amount <= max_val
+
+    amount_sec = _duration_to_seconds(amount, unit)
+    min_sec = _duration_to_seconds(min_val, min_unit)
+    max_sec = _duration_to_seconds(max_val, max_unit)
+    if amount_sec is None or min_sec is None or max_sec is None:
+        return False
+    return min_sec <= amount_sec <= max_sec
+
+
+async def _get_contracts_cached(symbol: str, product_type: str = "basic") -> Dict[str, object]:
+    now = time.time()
+    cached = CONTRACT_CACHE.get(symbol)
+    ttl = getattr(CONFIG, "contract_cache_ttl", 3600)
+    if cached and now - float(cached.get("ts", 0)) < ttl:
+        return cached.get("data", {})
+
+    ws = await _with_ws_public()
+    try:
+        resp = await ws.request({"contracts_for": symbol, "product_type": product_type})
+        data = resp.get("contracts_for", {})
+    finally:
+        await ws.close()
+
+    CONTRACT_CACHE[symbol] = {"ts": now, "data": data}
+    return data
+
+
+def _select_contract(available: List[dict], direction: str) -> Optional[dict]:
+    candidates = [c for c in available if c.get("contract_type") == direction]
+    if not candidates:
+        return None
+
+    def sort_key(item: dict) -> Tuple[int, int]:
+        parsed = _parse_duration(item.get("min_duration") or "")
+        if parsed:
+            amount, unit = parsed
+            unit_weight = {"t": 0, "s": 1, "m": 2, "h": 3, "d": 4}.get(unit, 9)
+            return unit_weight, amount
+        return (9, 999999)
+
+    candidates.sort(key=sort_key)
+    return candidates[0]
+
+
+async def _trade_params(symbol: str, direction: str) -> Optional[Dict[str, object]]:
+    data = await _get_contracts_cached(symbol)
+    available = data.get("available", [])
+    contract = _select_contract(available, direction)
+    if not contract:
+        return None
+    min_duration = contract.get("min_duration")
+    max_duration = contract.get("max_duration")
+    parsed = _parse_duration(min_duration) if min_duration else None
+    duration_value = parsed[0] if parsed else None
+    duration_unit = parsed[1] if parsed else None
+    return {
+        "contract_type": contract.get("contract_type"),
+        "min_duration": min_duration,
+        "max_duration": max_duration,
+        "duration": duration_value,
+        "duration_unit": duration_unit,
+    }
+
+
 def _token_status() -> Dict[str, object]:
     tokens = load_tokens(CONFIG.token_store_path)
     return {
@@ -164,11 +271,27 @@ async def _analyze_symbol(symbol: str) -> Dict[str, object]:
     if not indicators:
         raise HTTPException(status_code=400, detail="Could not compute indicators")
 
+    trade_params = {}
+    for direction in ("CALL", "PUT"):
+        params = await _trade_params(symbol, direction)
+        if params:
+            trade_params[direction] = params
+
+    recommended_trade = None
+    signal = indicators.get("signal")
+    if signal in trade_params:
+        recommended_trade = {
+            "direction": signal,
+            **trade_params[signal],
+        }
+
     payload = {
         "symbol": symbol,
         "timestamp": int(now),
         **indicators,
         "entry_ready": indicators.get("signal") in ("CALL", "PUT"),
+        "trade": recommended_trade,
+        "trade_params": trade_params,
     }
 
     ANALYSIS_CACHE[symbol] = {"ts": now, "data": payload}
@@ -304,14 +427,11 @@ async def contracts(
     symbol: str = Query(..., min_length=2),
     product_type: str = Query("basic"),
 ) -> Dict[str, object]:
-    ws = await _with_ws_public()
     try:
-        resp = await ws.request({"contracts_for": symbol, "product_type": product_type})
-        return resp.get("contracts_for", {})
+        data = await _get_contracts_cached(symbol, product_type)
+        return data
     except DerivAPIError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    finally:
-        await ws.close()
 
 
 @app.get("/api/trading-times")
@@ -414,6 +534,26 @@ async def trade(request: Request) -> Dict[str, object]:
     if isinstance(duration_unit, str) and duration_unit.strip():
         duration_unit_value = duration_unit.strip().lower()
 
+    params = await _trade_params(symbol, direction)
+    if not params:
+        raise HTTPException(status_code=400, detail="No contracts available for this symbol")
+
+    requested_duration = duration_value
+    requested_unit = duration_unit_value
+
+    if duration_value is None or duration_unit_value is None:
+        duration_value = params.get("duration")
+        duration_unit_value = params.get("duration_unit")
+
+    if duration_value is None or duration_unit_value is None:
+        raise HTTPException(status_code=400, detail="Unable to resolve a valid duration for this contract")
+
+    adjusted = False
+    if not _duration_in_range(duration_value, duration_unit_value, params.get("min_duration"), params.get("max_duration")):
+        duration_value = params.get("duration")
+        duration_unit_value = params.get("duration_unit")
+        adjusted = True
+
     async with TRADE_LOCK:
         ws = DerivWS(CONFIG.app_id)
         try:
@@ -438,5 +578,10 @@ async def trade(request: Request) -> Dict[str, object]:
         "symbol": symbol,
         "direction": direction,
         "mode": mode,
+        "duration_requested": requested_duration,
+        "duration_unit_requested": requested_unit,
+        "duration_adjusted": adjusted,
+        "min_duration": params.get("min_duration"),
+        "max_duration": params.get("max_duration"),
         **result,
     }
