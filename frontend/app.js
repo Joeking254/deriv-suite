@@ -28,8 +28,6 @@ const saveTokens = document.getElementById("saveTokens");
 const tokenStatus = document.getElementById("tokenStatus");
 const placeTrade = document.getElementById("placeTrade");
 const tradeStatus = document.getElementById("tradeStatus");
-const tradeDuration = document.getElementById("tradeDuration");
-const tradeDurationUnit = document.getElementById("tradeDurationUnit");
 const durationHint = document.getElementById("durationHint");
 
 let currentSignal = "WAIT";
@@ -105,12 +103,6 @@ async function loadConfig() {
   const strategyName = document.getElementById("strategyName");
   if (strategyName) {
     strategyName.textContent = "RSI + EMA + MACD + BB";
-  }
-  if (tradeDuration && typeof config.duration === "number") {
-    tradeDuration.value = config.duration;
-  }
-  if (tradeDurationUnit && typeof config.duration_unit === "string") {
-    tradeDurationUnit.value = config.duration_unit;
   }
 }
 
@@ -289,20 +281,11 @@ function applyTradeParams(recommended, tradeParams) {
     return;
   }
 
-  if (tradeDuration && tradeDurationUnit && trade.duration && trade.duration_unit) {
-    tradeDuration.value = trade.duration;
-    tradeDurationUnit.value = trade.duration_unit;
-  }
-  if (tradeDuration) {
-    if (trade.min_duration && trade.min_duration.startsWith(String(trade.duration))) {
-      tradeDuration.min = trade.duration;
-    }
-  }
-
   const minLabel = trade.min_duration || "--";
   const maxLabel = trade.max_duration || "--";
   const contractLabel = trade.contract_type ? ` (${trade.contract_type})` : "";
-  durationHint.textContent = `Allowed duration${contractLabel}: ${minLabel} to ${maxLabel}`;
+  const recommended = trade.duration && trade.duration_unit ? ` | recommended ${trade.duration}${trade.duration_unit}` : "";
+  durationHint.textContent = `Allowed duration${contractLabel}: ${minLabel} to ${maxLabel}${recommended}`;
 }
 
 function revealElements() {
@@ -332,17 +315,12 @@ async function placeTradeNow() {
   placeTrade.disabled = true;
   tradeStatus.textContent = "Trade status: placing trade (wait for contract close)...";
   try {
-    const durationValue = tradeDuration ? parseInt(tradeDuration.value, 10) : undefined;
-    const durationUnitValue = tradeDurationUnit ? tradeDurationUnit.value : undefined;
-
     const res = await fetch("/api/trade", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         symbol,
         direction: currentSignal,
-        duration: Number.isFinite(durationValue) ? durationValue : undefined,
-        duration_unit: durationUnitValue || undefined,
       }),
     });
     if (!res.ok) {
@@ -363,7 +341,9 @@ async function placeTradeNow() {
     const currency = data.currency ? ` ${data.currency}` : "";
     const status = data.status ? ` | ${data.status}` : "";
     const contract = data.contract_id ? ` | id ${data.contract_id}` : "";
-    tradeStatus.textContent = `Trade status: ${data.direction} closed (profit ${profit}${currency})${status}${contract}`;
+    const duration = data.duration ? ` | ${data.duration}${data.duration_unit || ""}` : "";
+    const adjusted = data.duration_adjusted ? " | adjusted" : "";
+    tradeStatus.textContent = `Trade status: ${data.direction} closed (profit ${profit}${currency})${duration}${adjusted}${status}${contract}`;
   } catch (err) {
     tradeStatus.textContent = `Trade status: failed (${err.message || "unknown error"})`;
   } finally {
