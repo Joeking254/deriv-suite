@@ -38,6 +38,7 @@ class Config:
     api_token: str
     account_mode: str
     token_store_path: str
+    trade_mode: str
     currency: str
 
     markets: Optional[List[str]]
@@ -96,6 +97,7 @@ def load_config() -> Config:
     api_token = os.getenv("API_TOKEN", "").strip()
     account_mode = os.getenv("ACCOUNT_MODE", "demo").strip().lower()
     token_store_path = os.getenv("TOKEN_STORE_PATH", "").strip()
+    trade_mode = os.getenv("TRADE_MODE", "auto").strip().lower()
     currency = os.getenv("CURRENCY", "USD").strip()
 
     markets = _parse_list(os.getenv("MARKETS", "all"))
@@ -155,6 +157,7 @@ def load_config() -> Config:
         api_token=api_token,
         account_mode=account_mode or "demo",
         token_store_path=token_store_path,
+        trade_mode=trade_mode or "auto",
         currency=currency,
         markets=markets,
         submarkets=submarkets,

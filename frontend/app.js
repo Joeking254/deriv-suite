@@ -3,6 +3,7 @@ const statusDot = document.getElementById("statusDot");
 const symbolSelect = document.getElementById("symbolSelect");
 const symbolCount = document.getElementById("symbolCount");
 const modeBadge = document.getElementById("modeBadge");
+const tradeModeBadge = document.getElementById("tradeModeBadge");
 const durationLabel = document.getElementById("durationLabel");
 const granularityLabel = document.getElementById("granularityLabel");
 const signalPill = document.getElementById("signalPill");
@@ -91,6 +92,9 @@ async function loadHealth() {
 async function loadConfig() {
   const config = await getJSON("/api/config");
   modeBadge.textContent = config.dry_run ? "DRY RUN" : "LIVE";
+  if (tradeModeBadge) {
+    tradeModeBadge.textContent = (config.trade_mode || "auto").toUpperCase();
+  }
   durationLabel.textContent = `${config.duration} ${config.duration_unit}`;
   granularityLabel.textContent = `${config.candle_granularity}s`;
   const strategyName = document.getElementById("strategyName");

@@ -32,3 +32,7 @@ Notes:
   - DASH_ALLOWED_IPS (comma-separated)
   - TRUST_PROXY=true if using Nginx reverse proxy
 - You can set demo/live tokens in the dashboard; they are stored in bot/tokens.json (gitignored).
+- Trade modes:
+  - auto: bot trades automatically, manual trades disabled
+  - manual: manual trades only (dashboard)
+  - hybrid: bot trades automatically and manual trades enabled

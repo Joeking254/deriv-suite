@@ -188,6 +188,7 @@ def health() -> Dict[str, object]:
 def config() -> Dict[str, object]:
     return {
         "account_mode": CONFIG.account_mode,
+        "trade_mode": CONFIG.trade_mode,
         "markets": CONFIG.markets,
         "submarkets": CONFIG.submarkets,
         "symbols": CONFIG.symbols,
@@ -287,6 +288,10 @@ async def scan(limit: int = Query(None, ge=1, le=20)) -> Dict[str, object]:
 
 @app.post("/api/trade")
 async def trade(request: Request) -> Dict[str, object]:
+    trade_mode = (CONFIG.trade_mode or "auto").lower()
+    if trade_mode == "auto":
+        raise HTTPException(status_code=400, detail="Manual trades are disabled in auto mode")
+
     if CONFIG.dry_run or CONFIG.paper_trade:
         raise HTTPException(status_code=400, detail="Disable DRY_RUN and PAPER_TRADE to execute trades")
 

@@ -25,6 +25,7 @@ A simple, safe baseline bot for Deriv that:
 Key values in .env:
 - APP_ID, API_TOKEN
 - ACCOUNT_MODE (demo/live), TOKEN_STORE_PATH (where dashboard stores tokens)
+- TRADE_MODE (auto, manual, hybrid)
 - MARKETS, SUBMARKETS, SYMBOLS (comma lists or all)
 - STAKE, DURATION, DURATION_UNIT
 - RSI_PERIOD, RSI_OVERBOUGHT, RSI_OVERSOLD, EMA_FAST, EMA_SLOW

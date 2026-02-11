@@ -212,6 +212,20 @@ async def main() -> None:
                         indicators.get("macd_hist") or 0.0,
                     )
 
+                    trade_mode = (config.trade_mode or "auto").lower()
+                    if trade_mode not in ("auto", "manual", "hybrid"):
+                        trade_mode = "auto"
+
+                    if trade_mode == "manual":
+                        if config.alert_on_trade:
+                            await _notify(
+                                config,
+                                logger,
+                                f"Signal {direction} | {symbol} (manual mode, no auto trade)",
+                            )
+                        await asyncio.sleep(config.post_trade_cooldown_sec)
+                        continue
+
                     if config.dry_run:
                         logger.info("DRY_RUN: skipping order")
                         await asyncio.sleep(config.post_trade_cooldown_sec)
