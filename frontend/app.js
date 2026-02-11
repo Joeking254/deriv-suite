@@ -284,8 +284,8 @@ function applyTradeParams(recommended, tradeParams) {
   const minLabel = trade.min_duration || "--";
   const maxLabel = trade.max_duration || "--";
   const contractLabel = trade.contract_type ? ` (${trade.contract_type})` : "";
-  const recommended = trade.duration && trade.duration_unit ? ` | recommended ${trade.duration}${trade.duration_unit}` : "";
-  durationHint.textContent = `Allowed duration${contractLabel}: ${minLabel} to ${maxLabel}${recommended}`;
+  const recommendedLabel = trade.duration && trade.duration_unit ? ` | recommended ${trade.duration}${trade.duration_unit}` : "";
+  durationHint.textContent = `Allowed duration${contractLabel}: ${minLabel} to ${maxLabel}${recommendedLabel}`;
 }
 
 function revealElements() {
