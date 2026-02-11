@@ -96,6 +96,22 @@
             <button class="btn primary" id="placeTrade">Place Trade</button>
           </div>
           <p class="hint" id="tradeStatus">Trade status: --</p>
+          <div class="meta-row">
+            <div>
+              <p class="meta-label">Trade Duration</p>
+              <input id="tradeDuration" class="input" type="number" min="1" value="1" />
+            </div>
+            <div>
+              <p class="meta-label">Unit</p>
+              <select id="tradeDurationUnit" class="select">
+                <option value="t">ticks</option>
+                <option value="s">sec</option>
+                <option value="m" selected>min</option>
+                <option value="h">hour</option>
+                <option value="d">day</option>
+              </select>
+            </div>
+          </div>
           <div class="price-line">
             <span>Last close</span>
             <strong id="lastClose">--</strong>

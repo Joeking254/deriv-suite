@@ -28,6 +28,8 @@ const saveTokens = document.getElementById("saveTokens");
 const tokenStatus = document.getElementById("tokenStatus");
 const placeTrade = document.getElementById("placeTrade");
 const tradeStatus = document.getElementById("tradeStatus");
+const tradeDuration = document.getElementById("tradeDuration");
+const tradeDurationUnit = document.getElementById("tradeDurationUnit");
 
 let currentSignal = "WAIT";
 
@@ -101,6 +103,12 @@ async function loadConfig() {
   const strategyName = document.getElementById("strategyName");
   if (strategyName) {
     strategyName.textContent = "RSI + EMA + MACD + BB";
+  }
+  if (tradeDuration && typeof config.duration === "number") {
+    tradeDuration.value = config.duration;
+  }
+  if (tradeDurationUnit && typeof config.duration_unit === "string") {
+    tradeDurationUnit.value = config.duration_unit;
   }
 }
 
@@ -287,10 +295,18 @@ async function placeTradeNow() {
   placeTrade.disabled = true;
   tradeStatus.textContent = "Trade status: placing trade (wait for contract close)...";
   try {
+    const durationValue = tradeDuration ? parseInt(tradeDuration.value, 10) : undefined;
+    const durationUnitValue = tradeDurationUnit ? tradeDurationUnit.value : undefined;
+
     const res = await fetch("/api/trade", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol, direction: currentSignal }),
+      body: JSON.stringify({
+        symbol,
+        direction: currentSignal,
+        duration: Number.isFinite(durationValue) ? durationValue : undefined,
+        duration_unit: durationUnitValue || undefined,
+      }),
     });
     if (!res.ok) {
       const text = await res.text();

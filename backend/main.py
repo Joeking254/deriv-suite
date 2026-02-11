@@ -317,6 +317,8 @@ async def trade(request: Request) -> Dict[str, object]:
 
     symbol = str(payload.get("symbol", "")).strip()
     direction = str(payload.get("direction", "")).strip().upper()
+    duration = payload.get("duration")
+    duration_unit = payload.get("duration_unit")
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol is required")
 
@@ -337,12 +339,29 @@ async def trade(request: Request) -> Dict[str, object]:
     if not token:
         raise HTTPException(status_code=400, detail="Missing API token for selected mode")
 
+    duration_value = None
+    if isinstance(duration, int) and duration > 0:
+        duration_value = duration
+    elif isinstance(duration, str) and duration.isdigit():
+        duration_value = int(duration)
+
+    duration_unit_value = None
+    if isinstance(duration_unit, str) and duration_unit.strip():
+        duration_unit_value = duration_unit.strip().lower()
+
     async with TRADE_LOCK:
         ws = DerivWS(CONFIG.app_id)
         try:
             await ws.connect()
             await ws.request({"authorize": token})
-            result = await place_trade(ws, symbol, direction, CONFIG)
+            result = await place_trade(
+                ws,
+                symbol,
+                direction,
+                CONFIG,
+                duration=duration_value,
+                duration_unit=duration_unit_value,
+            )
         except DerivAPIError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:

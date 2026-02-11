@@ -1,7 +1,18 @@
 from deriv_ws import DerivAPIError, DerivWS
 
 
-async def place_trade(ws: DerivWS, symbol: str, direction: str, config, logger=None) -> dict:
+async def place_trade(
+    ws: DerivWS,
+    symbol: str,
+    direction: str,
+    config,
+    logger=None,
+    duration: int | None = None,
+    duration_unit: str | None = None,
+) -> dict:
+    duration_value = duration if duration is not None else config.duration
+    duration_unit_value = duration_unit if duration_unit is not None else config.duration_unit
+
     proposal = await ws.request(
         {
             "proposal": 1,
@@ -9,8 +20,8 @@ async def place_trade(ws: DerivWS, symbol: str, direction: str, config, logger=N
             "basis": "stake",
             "contract_type": direction,
             "currency": config.currency,
-            "duration": config.duration,
-            "duration_unit": config.duration_unit,
+            "duration": duration_value,
+            "duration_unit": duration_unit_value,
             "symbol": symbol,
         }
     )
@@ -56,4 +67,6 @@ async def place_trade(ws: DerivWS, symbol: str, direction: str, config, logger=N
         "status": poc.get("status"),
         "payout": poc.get("payout"),
         "currency": config.currency,
+        "duration": duration_value,
+        "duration_unit": duration_unit_value,
     }
