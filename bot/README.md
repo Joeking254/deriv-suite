@@ -29,5 +29,10 @@ Key values in .env:
 - RSI_PERIOD, RSI_OVERBOUGHT, RSI_OVERSOLD, EMA_FAST, EMA_SLOW
 - MACD_FAST, MACD_SLOW, MACD_SIGNAL, BB_PERIOD, BB_STDDEV
 - CONFIRMATIONS_REQUIRED (how many indicators must align)
+- HTF_ENABLED, HTF_GRANULARITY, HTF_CANDLE_COUNT (multi-timeframe filter)
+- FILTER_CONTRACTS, CONTRACT_TYPES (skip symbols that don't support your contract/duration)
+- MAX_OPEN_POSITIONS, GLOBAL_TRADE_COOLDOWN_SEC
+- PAPER_TRADE (simulate entry/exit without sending orders)
 - MAX_DAILY_LOSS, MAX_CONSECUTIVE_LOSSES
 - DRY_RUN=true to avoid live trades
+- ALERT_TELEGRAM, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID

@@ -2,6 +2,7 @@
 
 This repo contains a minimal, production-ready Deriv trading bot that runs on a VPS.
 It includes a dashboard that analyzes markets using RSI, EMA, MACD, and Bollinger Bands.
+Confirmation thresholds, contract filtering, and multi-timeframe checks are configurable in .env.
 
 Structure:
 - bot: core trading bot
@@ -25,4 +26,7 @@ Quick start (Ubuntu 24.04):
 Notes:
 - Use a trading account token (CR or VRTC). Wallet tokens (CRW/VRW) cannot trade.
 - Start with DRY_RUN=true or a demo token before going live.
-- The dashboard has no authentication by default. Use a firewall or reverse proxy auth.
+- The dashboard supports basic auth and IP allowlists via .env:
+  - DASH_USER, DASH_PASS
+  - DASH_ALLOWED_IPS (comma-separated)
+  - TRUST_PROXY=true if using Nginx reverse proxy

@@ -1,12 +1,14 @@
+import base64
 import os
+import secrets
 import sys
 import time
 from pathlib import Path
 from typing import Dict, List
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,11 +31,53 @@ ANALYSIS_CACHE: Dict[str, Dict[str, object]] = {}
 SYMBOL_CACHE_TTL = int(os.getenv("SYMBOL_CACHE_TTL", "300"))
 ANALYSIS_CACHE_TTL = int(os.getenv("ANALYSIS_CACHE_TTL", "20"))
 SCAN_LIMIT = int(os.getenv("SCAN_LIMIT", "6"))
+DASH_USER = os.getenv("DASH_USER", "").strip()
+DASH_PASS = os.getenv("DASH_PASS", "").strip()
+DASH_ALLOWED_IPS = [ip.strip() for ip in os.getenv("DASH_ALLOWED_IPS", "").split(",") if ip.strip()]
+TRUST_PROXY = os.getenv("TRUST_PROXY", "false").strip().lower() in ("1", "true", "yes", "y")
 
 app = FastAPI(title="Deriv Signal Desk")
 
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+
+def _client_ip(request: Request) -> str:
+    if TRUST_PROXY:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return ""
+
+
+def _basic_auth_valid(request: Request) -> bool:
+    if not DASH_USER or not DASH_PASS:
+        return True
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("basic "):
+        return False
+    try:
+        encoded = auth.split(" ", 1)[1].strip()
+        decoded = base64.b64decode(encoded).decode("utf-8")
+        username, password = decoded.split(":", 1)
+    except Exception:
+        return False
+    return secrets.compare_digest(username, DASH_USER) and secrets.compare_digest(password, DASH_PASS)
+
+
+@app.middleware("http")
+async def enforce_access(request: Request, call_next):
+    if DASH_ALLOWED_IPS:
+        ip = _client_ip(request)
+        if ip not in DASH_ALLOWED_IPS:
+            return JSONResponse({"detail": "Forbidden"}, status_code=403)
+
+    if not _basic_auth_valid(request):
+        return Response(status_code=401, headers={"WWW-Authenticate": "Basic"})
+
+    return await call_next(request)
 
 
 async def _with_ws() -> DerivWS:
@@ -143,6 +187,14 @@ def config() -> Dict[str, object]:
         "bb_period": CONFIG.bb_period,
         "bb_stddev": CONFIG.bb_stddev,
         "confirmations_required": CONFIG.confirmations_required,
+        "htf_enabled": CONFIG.htf_enabled,
+        "htf_granularity": CONFIG.htf_granularity,
+        "htf_candle_count": CONFIG.htf_candle_count,
+        "filter_contracts": CONFIG.filter_contracts,
+        "contract_types": CONFIG.contract_types,
+        "global_trade_cooldown_sec": CONFIG.global_trade_cooldown_sec,
+        "max_open_positions": CONFIG.max_open_positions,
+        "paper_trade": CONFIG.paper_trade,
         "dry_run": CONFIG.dry_run,
     }
 
