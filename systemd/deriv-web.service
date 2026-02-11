@@ -1,0 +1,16 @@
+[Unit]
+Description=Deriv Signal Desk (Web)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/deriv-suite/backend
+EnvironmentFile=/opt/deriv-suite/bot/.env
+ExecStart=/opt/deriv-suite/.venv/bin/python /opt/deriv-suite/backend/serve.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

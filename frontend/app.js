@@ -1,0 +1,208 @@
+const statusText = document.getElementById("statusText");
+const statusDot = document.getElementById("statusDot");
+const symbolSelect = document.getElementById("symbolSelect");
+const symbolCount = document.getElementById("symbolCount");
+const modeBadge = document.getElementById("modeBadge");
+const durationLabel = document.getElementById("durationLabel");
+const granularityLabel = document.getElementById("granularityLabel");
+const signalPill = document.getElementById("signalPill");
+const lastClose = document.getElementById("lastClose");
+const rsiValue = document.getElementById("rsiValue");
+const emaFastValue = document.getElementById("emaFastValue");
+const emaSlowValue = document.getElementById("emaSlowValue");
+const trendValue = document.getElementById("trendValue");
+const macdHistValue = document.getElementById("macdHistValue");
+const bbPositionValue = document.getElementById("bbPositionValue");
+const bbUpperValue = document.getElementById("bbUpperValue");
+const bbLowerValue = document.getElementById("bbLowerValue");
+const confirmScoreValue = document.getElementById("confirmScoreValue");
+const confirmRequiredValue = document.getElementById("confirmRequiredValue");
+const confirmations = document.getElementById("confirmations");
+const scanGrid = document.getElementById("scanGrid");
+
+const refreshAnalysis = document.getElementById("refreshAnalysis");
+const refreshScan = document.getElementById("refreshScan");
+const scanNow = document.getElementById("scanNow");
+
+async function getJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || "Request failed");
+  }
+  return res.json();
+}
+
+function setStatus(ok) {
+  statusText.textContent = ok ? "Connected" : "Disconnected";
+  statusDot.style.background = ok ? "var(--signal-call)" : "var(--signal-put)";
+}
+
+function setSignal(signal) {
+  signalPill.textContent = signal || "WAIT";
+  signalPill.style.color = "var(--signal-wait)";
+  signalPill.style.background = "rgba(141, 124, 104, 0.16)";
+  if (signal === "CALL") {
+    signalPill.style.color = "white";
+    signalPill.style.background = "var(--signal-call)";
+  }
+  if (signal === "PUT") {
+    signalPill.style.color = "white";
+    signalPill.style.background = "var(--signal-put)";
+  }
+}
+
+function clearConfirmations() {
+  confirmations.innerHTML = "";
+}
+
+function addConfirmation(text, variant) {
+  const chip = document.createElement("span");
+  chip.className = `chip ${variant || ""}`.trim();
+  chip.textContent = text;
+  confirmations.appendChild(chip);
+}
+
+function formatNumber(value) {
+  if (value === null || value === undefined) return "--";
+  if (typeof value === "number") return value.toFixed(4);
+  return value;
+}
+
+async function loadHealth() {
+  try {
+    await getJSON("/api/health");
+    setStatus(true);
+  } catch (err) {
+    setStatus(false);
+  }
+}
+
+async function loadConfig() {
+  const config = await getJSON("/api/config");
+  modeBadge.textContent = config.dry_run ? "DRY RUN" : "LIVE";
+  durationLabel.textContent = `${config.duration} ${config.duration_unit}`;
+  granularityLabel.textContent = `${config.candle_granularity}s`;
+  const strategyName = document.getElementById("strategyName");
+  if (strategyName) {
+    strategyName.textContent = "RSI + EMA + MACD + BB";
+  }
+}
+
+async function loadSymbols() {
+  const data = await getJSON("/api/symbols?limit=200");
+  symbolCount.textContent = data.count || data.symbols.length;
+  symbolSelect.innerHTML = "";
+  data.symbols.forEach((symbol) => {
+    const opt = document.createElement("option");
+    opt.value = symbol;
+    opt.textContent = symbol;
+    symbolSelect.appendChild(opt);
+  });
+  if (data.symbols.length > 0) {
+    symbolSelect.value = data.symbols[0];
+  }
+}
+
+async function loadAnalysis() {
+  const symbol = symbolSelect.value;
+  if (!symbol) return;
+  setSignal("WAIT");
+  clearConfirmations();
+  addConfirmation("Loading indicator confirmations...", "wait");
+  try {
+    const data = await getJSON(`/api/analysis?symbol=${encodeURIComponent(symbol)}`);
+    setSignal(data.signal);
+    lastClose.textContent = formatNumber(data.last_close);
+    rsiValue.textContent = formatNumber(data.rsi);
+    emaFastValue.textContent = formatNumber(data.ema_fast);
+    emaSlowValue.textContent = formatNumber(data.ema_slow);
+    trendValue.textContent = data.trend;
+    macdHistValue.textContent = formatNumber(data.macd_hist);
+    bbPositionValue.textContent = formatNumber(data.bb_position);
+    bbUpperValue.textContent = formatNumber(data.bb_upper);
+    bbLowerValue.textContent = formatNumber(data.bb_lower);
+    confirmScoreValue.textContent = `${data.confirmation_score ?? "--"}`;
+    confirmRequiredValue.textContent = `${data.confirmations_required ?? "--"}`;
+    clearConfirmations();
+    if (data.confirmations && data.confirmations.length) {
+      data.confirmations.forEach((text) => {
+        let variant = "wait";
+        if (data.signal === "CALL") variant = "call";
+        if (data.signal === "PUT") variant = "put";
+        addConfirmation(text, variant);
+      });
+    } else {
+      addConfirmation("No confirmations yet", "wait");
+    }
+  } catch (err) {
+    clearConfirmations();
+    addConfirmation("Failed to load analysis", "put");
+  }
+}
+
+function renderScanCard(result) {
+  const card = document.createElement("div");
+  card.className = "scan-card";
+  const signalClass = result.signal === "CALL" ? "var(--signal-call)" : result.signal === "PUT" ? "var(--signal-put)" : "var(--signal-wait)";
+  card.innerHTML = `
+    <h4>${result.symbol}</h4>
+    <div class="scan-signal" style="color:${signalClass}">${result.signal}</div>
+    <p>RSI ${formatNumber(result.rsi)}</p>
+    <p>Trend ${result.trend}</p>
+    <p>Score ${result.confirmation_score}/${result.confirmations_required}</p>
+  `;
+  return card;
+}
+
+async function loadScan() {
+  scanGrid.innerHTML = "";
+  const loading = document.createElement("div");
+  loading.className = "scan-card";
+  loading.textContent = "Scanning markets...";
+  scanGrid.appendChild(loading);
+  try {
+    const data = await getJSON("/api/scan");
+    scanGrid.innerHTML = "";
+    if (!data.results || data.results.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "scan-card";
+      empty.textContent = "No signals found yet.";
+      scanGrid.appendChild(empty);
+      return;
+    }
+    data.results.forEach((result) => {
+      scanGrid.appendChild(renderScanCard(result));
+    });
+  } catch (err) {
+    scanGrid.innerHTML = "";
+    const fail = document.createElement("div");
+    fail.className = "scan-card";
+    fail.textContent = "Scan failed. Try again.";
+    scanGrid.appendChild(fail);
+  }
+}
+
+function revealElements() {
+  const elements = Array.from(document.querySelectorAll("[data-reveal]"));
+  elements.forEach((el, index) => {
+    el.style.animationDelay = `${index * 120}ms`;
+    el.classList.add("reveal");
+  });
+}
+
+refreshAnalysis.addEventListener("click", loadAnalysis);
+refreshScan.addEventListener("click", loadScan);
+scanNow.addEventListener("click", loadScan);
+symbolSelect.addEventListener("change", loadAnalysis);
+
+async function init() {
+  revealElements();
+  await loadHealth();
+  await loadConfig();
+  await loadSymbols();
+  await loadAnalysis();
+  await loadScan();
+}
+
+init();

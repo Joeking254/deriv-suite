@@ -1,0 +1,28 @@
+# Deriv Trading Bot Suite
+
+This repo contains a minimal, production-ready Deriv trading bot that runs on a VPS.
+It includes a dashboard that analyzes markets using RSI, EMA, MACD, and Bollinger Bands.
+
+Structure:
+- bot: core trading bot
+- backend: web API for the dashboard
+- frontend: static dashboard UI
+- systemd: service unit for Ubuntu
+- logs: runtime logs
+- install_ubuntu.sh: one-shot VPS installer
+
+Quick start (Ubuntu 24.04):
+1) Create a Python venv and install deps:
+   python3 -m venv .venv
+   ./.venv/bin/pip install -r bot/requirements.txt
+2) Copy bot/.env.example to bot/.env and fill in your Deriv APP_ID + API_TOKEN
+3) Run:
+   ./.venv/bin/python bot/main.py
+4) Run the dashboard:
+   ./.venv/bin/python backend/serve.py
+   Open http://localhost:8080
+
+Notes:
+- Use a trading account token (CR or VRTC). Wallet tokens (CRW/VRW) cannot trade.
+- Start with DRY_RUN=true or a demo token before going live.
+- The dashboard has no authentication by default. Use a firewall or reverse proxy auth.

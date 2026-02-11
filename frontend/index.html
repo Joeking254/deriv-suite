@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deriv Signal Desk</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:wght@300;500;700&family=IBM+Plex+Sans:wght@300;400;600&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script defer src="/static/app.js"></script>
+  </head>
+  <body>
+    <div class="mesh"></div>
+    <header class="topbar" data-reveal>
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <div>
+          <p class="brand-title">Deriv Signal Desk</p>
+          <p class="brand-subtitle">Indicator-confirmed entries</p>
+        </div>
+      </div>
+      <div class="status">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Connecting...</span>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="hero" data-reveal>
+        <div class="hero-text">
+          <h1>Market analysis with confirmation logic.</h1>
+          <p>
+            This dashboard pulls real-time candles from Deriv, computes RSI, EMA,
+            MACD, and Bollinger Bands, then highlights entries only when confirmations align.
+          </p>
+          <div class="hero-actions">
+            <button class="btn primary" id="refreshAnalysis">Refresh Analysis</button>
+            <button class="btn ghost" id="refreshScan">Scan Markets</button>
+          </div>
+        </div>
+        <div class="hero-panel">
+          <div class="stat">
+            <span>Symbols</span>
+            <strong id="symbolCount">--</strong>
+          </div>
+          <div class="stat">
+            <span>Strategy</span>
+            <strong id="strategyName">RSI + EMA + MACD + BB</strong>
+          </div>
+          <div class="stat">
+            <span>Mode</span>
+            <strong id="modeBadge">--</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card" data-reveal>
+          <div class="card-header">
+            <h2>Symbol Focus</h2>
+            <p>Pick a market and inspect its confirmations.</p>
+          </div>
+          <label class="input-label" for="symbolSelect">Symbol</label>
+          <select id="symbolSelect" class="select"></select>
+          <div class="meta-row">
+            <div>
+              <p class="meta-label">Duration</p>
+              <p class="meta-value" id="durationLabel">--</p>
+            </div>
+            <div>
+              <p class="meta-label">Granularity</p>
+              <p class="meta-value" id="granularityLabel">--</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card signal-card" data-reveal>
+          <div class="card-header">
+            <h2>Entry Confirmation</h2>
+            <p>Signal appears only when indicators agree.</p>
+          </div>
+          <div class="signal-pill" id="signalPill">WAIT</div>
+          <div class="price-line">
+            <span>Last close</span>
+            <strong id="lastClose">--</strong>
+          </div>
+          <div class="indicator-grid">
+            <div class="indicator">
+              <p>RSI</p>
+              <strong id="rsiValue">--</strong>
+            </div>
+            <div class="indicator">
+              <p>EMA Fast</p>
+              <strong id="emaFastValue">--</strong>
+            </div>
+            <div class="indicator">
+              <p>EMA Slow</p>
+              <strong id="emaSlowValue">--</strong>
+            </div>
+            <div class="indicator">
+              <p>Trend</p>
+              <strong id="trendValue">--</strong>
+            </div>
+            <div class="indicator">
+              <p>MACD Hist</p>
+              <strong id="macdHistValue">--</strong>
+            </div>
+            <div class="indicator">
+              <p>BB Position</p>
+              <strong id="bbPositionValue">--</strong>
+            </div>
+            <div class="indicator">
+              <p>BB Upper</p>
+              <strong id="bbUpperValue">--</strong>
+            </div>
+            <div class="indicator">
+              <p>BB Lower</p>
+              <strong id="bbLowerValue">--</strong>
+            </div>
+            <div class="indicator">
+              <p>Confirm Score</p>
+              <strong id="confirmScoreValue">--</strong>
+            </div>
+            <div class="indicator">
+              <p>Required</p>
+              <strong id="confirmRequiredValue">--</strong>
+            </div>
+          </div>
+          <div class="confirmations" id="confirmations"></div>
+        </div>
+      </section>
+
+      <section class="scan" data-reveal>
+        <div class="scan-header">
+          <div>
+            <h2>Market Scan</h2>
+            <p>Quick view of the first symbols in your allowlist.</p>
+          </div>
+          <button class="btn ghost" id="scanNow">Refresh Scan</button>
+        </div>
+        <div class="scan-grid" id="scanGrid"></div>
+      </section>
+
+      <section class="notes" data-reveal>
+        <div class="card note-card">
+          <h3>How confirmations work</h3>
+          <p>
+            We confirm entries using RSI, EMA trend, MACD histogram, and Bollinger
+            Band position. A trade signal appears only when enough confirmations
+            meet your configured threshold.
+          </p>
+        </div>
+        <div class="card note-card">
+          <h3>Safety first</h3>
+          <p>
+            Keep DRY_RUN enabled while you test. When you switch to live, set
+            strict max loss limits and start with the smallest stake.
+          </p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

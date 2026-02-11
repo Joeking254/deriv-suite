@@ -1,0 +1,16 @@
+[Unit]
+Description=Deriv Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/deriv-suite/bot
+EnvironmentFile=/opt/deriv-suite/bot/.env
+ExecStart=/opt/deriv-suite/.venv/bin/python /opt/deriv-suite/bot/main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
