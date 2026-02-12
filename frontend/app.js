@@ -152,20 +152,67 @@ function renderOpenContracts(contracts) {
   }
   openContractsEmpty.style.display = "none";
   contracts.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "position-row";
+    const card = document.createElement("div");
+    card.className = "position-card";
     const profit = typeof item.profit === "number" ? item.profit : 0;
     const cur = item.currency ? ` ${item.currency}` : "";
     const sign = profit >= 0 ? "+" : "";
     const pnlText = `${sign}${profit.toFixed(2)}${cur}`;
-    row.innerHTML = `
-      <span title="${item.symbol || "--"}">${item.symbol || "--"}</span>
-      <span>${item.contract_type || "--"}</span>
-      <span style="color:${profit >= 0 ? "var(--signal-call)" : "var(--signal-put)"}">${pnlText}</span>
-      <span title="${item.contract_id || "--"}">${item.contract_id || "--"}</span>
+    const symbolName = symbolMeta[item.symbol]?.display_name || item.symbol || "--";
+    const type = item.contract_type || "--";
+    const typeLabel = type === "CALL" ? "Rise" : type === "PUT" ? "Fall" : type;
+    const typeClass = type === "CALL" ? "call" : type === "PUT" ? "put" : "wait";
+    const stake = typeof item.buy_price === "number" ? item.buy_price.toFixed(2) : "--";
+    const payout = typeof item.payout === "number" ? item.payout.toFixed(2) : "--";
+    const timeLeft = formatTimeLeft(item.date_expiry);
+    const started = formatTimestamp(item.date_start);
+
+    card.innerHTML = `
+      <div class="position-top">
+        <div class="position-symbol">
+          <strong>${symbolName}</strong>
+          <span class="position-pill ${typeClass}">${typeLabel}</span>
+        </div>
+        <strong style="color:${profit >= 0 ? "var(--signal-call)" : "var(--signal-put)"}">${pnlText}</strong>
+      </div>
+      <div class="position-meta">
+        <span>Time left: ${timeLeft}</span>
+        <span>Opened: ${started}</span>
+        <span>ID: ${item.contract_id || "--"}</span>
+      </div>
+      <div class="position-stats">
+        <div class="position-stat">
+          Stake
+          <strong>${stake}${cur}</strong>
+        </div>
+        <div class="position-stat">
+          Payout
+          <strong>${payout}${cur}</strong>
+        </div>
+        <div class="position-stat">
+          PnL
+          <strong style="color:${profit >= 0 ? "var(--signal-call)" : "var(--signal-put)"}">${pnlText}</strong>
+        </div>
+      </div>
     `;
-    openContractsList.appendChild(row);
+    openContractsList.appendChild(card);
   });
+}
+
+function formatTimeLeft(expiry) {
+  if (!expiry) return "--";
+  const now = Math.floor(Date.now() / 1000);
+  const remaining = Math.max(0, Number(expiry) - now);
+  const mins = Math.floor(remaining / 60);
+  const secs = remaining % 60;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+function formatTimestamp(ts) {
+  if (!ts) return "--";
+  const date = new Date(Number(ts) * 1000);
+  if (Number.isNaN(date.getTime())) return "--";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 async function loadOpenContracts() {
