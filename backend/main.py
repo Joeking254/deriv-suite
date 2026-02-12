@@ -728,3 +728,38 @@ async def trade(request: Request) -> Dict[str, object]:
         "max_duration": params.get("max_duration"),
         **result,
     }
+
+
+@app.get("/api/open-contracts")
+async def open_contracts() -> Dict[str, object]:
+    ws = await _with_ws()
+    try:
+        resp = await ws.request({"portfolio": 1})
+        contracts = resp.get("portfolio", {}).get("contracts", [])
+        open_items = []
+        for item in contracts:
+            if item.get("is_sold") or item.get("status") in ("sold", "expired"):
+                continue
+            profit = item.get("profit")
+            if profit is None:
+                sell_price = float(item.get("sell_price", 0) or 0)
+                buy_price = float(item.get("buy_price", 0) or 0)
+                profit = sell_price - buy_price
+            open_items.append(
+                {
+                    "contract_id": item.get("contract_id"),
+                    "symbol": item.get("symbol"),
+                    "contract_type": item.get("contract_type"),
+                    "buy_price": float(item.get("buy_price", 0) or 0),
+                    "current_spot": item.get("current_spot"),
+                    "profit": float(profit or 0),
+                    "currency": item.get("currency") or CONFIG.currency,
+                    "date_start": item.get("date_start"),
+                    "date_expiry": item.get("date_expiry"),
+                }
+            )
+        return {"open_contracts": open_items, "count": len(open_items)}
+    except DerivAPIError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        await ws.close()

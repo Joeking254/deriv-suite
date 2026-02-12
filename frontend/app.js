@@ -30,6 +30,8 @@ const tokenStatus = document.getElementById("tokenStatus");
 const placeTrade = document.getElementById("placeTrade");
 const tradeStatus = document.getElementById("tradeStatus");
 const durationHint = document.getElementById("durationHint");
+const openContractsList = document.getElementById("openContracts");
+const openContractsEmpty = document.getElementById("openContractsEmpty");
 
 let currentSignal = "WAIT";
 let symbolMeta = {};
@@ -137,6 +139,44 @@ async function loadBalance() {
   } catch (err) {
     balanceValue.textContent = "--";
     if (pnlValue) pnlValue.textContent = "--";
+  }
+}
+
+function renderOpenContracts(contracts) {
+  if (!openContractsList || !openContractsEmpty) return;
+  openContractsList.innerHTML = "";
+  if (!contracts || contracts.length === 0) {
+    openContractsEmpty.textContent = "No open contracts.";
+    openContractsEmpty.style.display = "block";
+    return;
+  }
+  openContractsEmpty.style.display = "none";
+  contracts.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "position-row";
+    const profit = typeof item.profit === "number" ? item.profit : 0;
+    const cur = item.currency ? ` ${item.currency}` : "";
+    const sign = profit >= 0 ? "+" : "";
+    const pnlText = `${sign}${profit.toFixed(2)}${cur}`;
+    row.innerHTML = `
+      <span title="${item.symbol || "--"}">${item.symbol || "--"}</span>
+      <span>${item.contract_type || "--"}</span>
+      <span style="color:${profit >= 0 ? "var(--signal-call)" : "var(--signal-put)"}">${pnlText}</span>
+      <span title="${item.contract_id || "--"}">${item.contract_id || "--"}</span>
+    `;
+    openContractsList.appendChild(row);
+  });
+}
+
+async function loadOpenContracts() {
+  if (!openContractsList || !openContractsEmpty) return;
+  try {
+    const data = await getJSON("/api/open-contracts");
+    renderOpenContracts(data.open_contracts || []);
+  } catch (err) {
+    openContractsList.innerHTML = "";
+    openContractsEmpty.textContent = "Unable to load open contracts.";
+    openContractsEmpty.style.display = "block";
   }
 }
 
@@ -406,11 +446,13 @@ async function placeTradeNow() {
       const status = data.status ? ` | ${data.status}` : "";
       tradeStatus.textContent = `Trade status: ${data.direction} closed (profit ${profit}${currency})${duration}${adjusted}${status}${contract}`;
       await loadBalance();
+      await loadOpenContracts();
       return;
     }
     tradeStatus.textContent = `Trade status: open${duration}${adjusted}${contract}`;
     activeContractId = data.contract_id;
     tradePoll = setTimeout(() => pollContract(activeContractId, 0), 2000);
+    await loadOpenContracts();
   } catch (err) {
     tradeStatus.textContent = `Trade status: failed (${err.message || "unknown error"})`;
   } finally {
@@ -431,6 +473,9 @@ async function init() {
   await loadSymbols();
   await loadAnalysis();
   await loadScan();
+  await loadOpenContracts();
 }
 
 init();
+
+setInterval(loadOpenContracts, 10000);
