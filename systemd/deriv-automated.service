@@ -1,0 +1,16 @@
+[Unit]
+Description=Deriv Automated Trading (Node)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/deriv-suite/backend-node
+EnvironmentFile=/opt/deriv-suite/backend-node/.env
+ExecStart=/usr/bin/node /opt/deriv-suite/backend-node/src/index.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -14,6 +14,7 @@ Structure:
 - bot: core trading bot
 - backend: web API for the dashboard
 - frontend: static dashboard UI
+- backend-node: automated trading service (Node.js + Deriv WS)
 - systemd: service unit for Ubuntu
 - logs: runtime logs
 - install_ubuntu.sh: one-shot VPS installer
@@ -41,3 +42,21 @@ Notes:
   - auto: bot trades automatically, manual trades disabled
   - manual: manual trades only (dashboard)
   - hybrid: bot trades automatically and manual trades enabled
+
+Automated Trading (Node.js)
+1) Copy backend-node/.env.example to backend-node/.env and set:
+   - DERIV_APP_ID
+   - DERIV_TOKEN_KEY (32-byte base64 or hex)
+   - MONGODB_URI / MONGODB_DB
+2) Install deps:
+   cd backend-node
+   npm install
+3) Run:
+   npm start
+4) The dashboard will connect to:
+   - /api/deriv/connect (store token server-side)
+   - /api/deriv/stream (live open positions + logs)
+
+Suggested service:
+- Create a systemd unit that runs `node /opt/deriv-suite/backend-node/src/index.js`
+- Proxy `/api/deriv` to port 8081 in Nginx

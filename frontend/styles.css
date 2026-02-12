@@ -363,6 +363,41 @@ body {
   color: var(--ink);
 }
 
+.log-box {
+  margin-top: 14px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 12px;
+  padding: 12px;
+  max-height: 220px;
+  overflow-y: auto;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  display: grid;
+  gap: 6px;
+}
+
+.log-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.log-level {
+  font-weight: 700;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.log-level.info {
+  color: var(--signal-call);
+}
+
+.log-level.warn,
+.log-level.error {
+  color: var(--signal-put);
+}
+
 .hint {
   margin-top: 12px;
   font-size: 0.85rem;

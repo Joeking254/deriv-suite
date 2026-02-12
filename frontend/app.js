@@ -32,12 +32,18 @@ const tradeStatus = document.getElementById("tradeStatus");
 const durationHint = document.getElementById("durationHint");
 const openContractsList = document.getElementById("openContracts");
 const openContractsEmpty = document.getElementById("openContractsEmpty");
+const botStart = document.getElementById("botStart");
+const botStop = document.getElementById("botStop");
+const botStatus = document.getElementById("botStatus");
+const derivStatus = document.getElementById("derivStatus");
+const botLogs = document.getElementById("botLogs");
 
 let currentSignal = "WAIT";
 let symbolMeta = {};
 let activeContractId = null;
 let tradePoll = null;
 let activeMode = "demo";
+let derivStream = null;
 
 const refreshAnalysis = document.getElementById("refreshAnalysis");
 const refreshScan = document.getElementById("refreshScan");
@@ -142,6 +148,23 @@ async function loadBalance() {
   }
 }
 
+function appendBotLog(level, message) {
+  if (!botLogs) return;
+  const line = document.createElement("div");
+  line.className = "log-line";
+  const levelTag = document.createElement("span");
+  levelTag.className = `log-level ${level || "info"}`;
+  levelTag.textContent = level ? level.toUpperCase() : "INFO";
+  const msg = document.createElement("span");
+  msg.textContent = message;
+  line.appendChild(levelTag);
+  line.appendChild(msg);
+  botLogs.prepend(line);
+  while (botLogs.childElementCount > 40) {
+    botLogs.removeChild(botLogs.lastChild);
+  }
+}
+
 function renderOpenContracts(contracts) {
   if (!openContractsList || !openContractsEmpty) return;
   openContractsList.innerHTML = "";
@@ -168,6 +191,7 @@ function renderOpenContracts(contracts) {
     const started = formatTimestamp(item.date_start);
     const currentSpot = typeof item.current_spot === "number" ? item.current_spot.toFixed(5) : "--";
     const entrySpot = typeof item.entry_spot === "number" ? item.entry_spot.toFixed(5) : "--";
+    const pct = typeof item.profit_percentage === "number" ? `${item.profit_percentage.toFixed(2)}%` : "--";
 
     card.innerHTML = `
       <div class="position-top">
@@ -201,7 +225,7 @@ function renderOpenContracts(contracts) {
         </div>
         <div class="position-stat">
           PnL
-          <strong style="color:${profit >= 0 ? "var(--signal-call)" : "var(--signal-put)"}">${pnlText}</strong>
+          <strong style="color:${profit >= 0 ? "var(--signal-call)" : "var(--signal-put)"}">${pnlText} (${pct})</strong>
         </div>
       </div>
     `;
@@ -228,12 +252,17 @@ function formatTimestamp(ts) {
 async function loadOpenContracts() {
   if (!openContractsList || !openContractsEmpty) return;
   try {
-    const data = await getJSON("/api/open-contracts");
-    renderOpenContracts(data.open_contracts || []);
+    const data = await getJSON("/api/deriv/open-positions");
+    renderOpenContracts(data.open_positions || []);
   } catch (err) {
-    openContractsList.innerHTML = "";
-    openContractsEmpty.textContent = "Unable to load open contracts.";
-    openContractsEmpty.style.display = "block";
+    try {
+      const fallback = await getJSON("/api/open-contracts");
+      renderOpenContracts(fallback.open_contracts || []);
+    } catch (err2) {
+      openContractsList.innerHTML = "";
+      openContractsEmpty.textContent = "Unable to load open contracts.";
+      openContractsEmpty.style.display = "block";
+    }
   }
 }
 
@@ -272,10 +301,22 @@ async function saveAuth() {
     }
     if (demoToken) demoToken.value = "";
     if (liveToken) liveToken.value = "";
+    const selected = modeSelect.value;
+    const connectToken =
+      selected === "demo" ? payload.demo_token : selected === "live" ? payload.live_token : null;
+    if (connectToken) {
+      await fetch("/api/deriv/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: connectToken, account_mode: selected }),
+      });
+      appendBotLog("info", `Deriv connected (${selected})`);
+    }
     await loadAuth();
     await loadBalance();
   } catch (err) {
     tokenStatus.textContent = "Status: save failed";
+    appendBotLog("error", err.message || "Token save failed");
   }
 }
 
@@ -521,6 +562,140 @@ if (placeTrade) {
   placeTrade.addEventListener("click", placeTradeNow);
 }
 
+async function startBot() {
+  if (!botStatus) return;
+  botStatus.textContent = "Bot status: starting...";
+  try {
+    const res = await fetch("/api/deriv/bot/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || "Bot start failed");
+    }
+    botStatus.textContent = "Bot status: running";
+  } catch (err) {
+    botStatus.textContent = `Bot status: error (${err.message || "failed"})`;
+    appendBotLog("error", err.message || "Bot start failed");
+  }
+}
+
+async function stopBot() {
+  if (!botStatus) return;
+  botStatus.textContent = "Bot status: stopping...";
+  try {
+    const res = await fetch("/api/deriv/bot/stop", { method: "POST" });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || "Bot stop failed");
+    }
+    botStatus.textContent = "Bot status: stopped";
+  } catch (err) {
+    botStatus.textContent = `Bot status: error (${err.message || "failed"})`;
+    appendBotLog("error", err.message || "Bot stop failed");
+  }
+}
+
+async function loadBotStatus() {
+  if (!botStatus) return;
+  try {
+    const data = await getJSON("/api/deriv/bot/status");
+    botStatus.textContent = data.running ? "Bot status: running" : "Bot status: stopped";
+    if (data.last_error) {
+      appendBotLog("error", data.last_error);
+    }
+  } catch (err) {
+    botStatus.textContent = "Bot status: unavailable";
+  }
+}
+
+function initDerivStream() {
+  if (derivStream) return;
+  derivStream = new EventSource("/api/deriv/stream");
+  derivStream.addEventListener("status", (event) => {
+    try {
+      const data = JSON.parse(event.data || "{}");
+      if (derivStatus) {
+        derivStatus.textContent = `Deriv stream: ${data.status || "--"}`;
+      }
+    } catch (err) {
+      // ignore
+    }
+  });
+  derivStream.addEventListener("open_positions", (event) => {
+    try {
+      const data = JSON.parse(event.data || "{}");
+      renderOpenContracts(data.open_positions || []);
+    } catch (err) {
+      // ignore
+    }
+  });
+  derivStream.addEventListener("tick", (event) => {
+    try {
+      const data = JSON.parse(event.data || "{}");
+      if (data.symbol && data.quote) {
+        appendBotLog("debug", `Tick ${data.symbol} ${data.quote}`);
+      }
+    } catch (err) {
+      // ignore
+    }
+  });
+  derivStream.addEventListener("open_contract", (event) => {
+    try {
+      const data = JSON.parse(event.data || "{}");
+      appendBotLog("info", `Open contract update ${data.contract_id || ""}`);
+    } catch (err) {
+      // ignore
+    }
+  });
+  derivStream.addEventListener("trade_opened", (event) => {
+    try {
+      const data = JSON.parse(event.data || "{}");
+      appendBotLog("info", `Trade opened ${data.contract_id || ""}`);
+    } catch (err) {
+      // ignore
+    }
+  });
+  derivStream.addEventListener("trade_closed", (event) => {
+    try {
+      const data = JSON.parse(event.data || "{}");
+      appendBotLog("info", `Trade closed ${data.contract_id || ""}`);
+    } catch (err) {
+      // ignore
+    }
+  });
+  derivStream.addEventListener("bot_error", (event) => {
+    try {
+      const data = JSON.parse(event.data || "{}");
+      appendBotLog("error", data.message || "Bot error");
+    } catch (err) {
+      // ignore
+    }
+  });
+  derivStream.addEventListener("log", (event) => {
+    try {
+      const data = JSON.parse(event.data || "{}");
+      appendBotLog(data.level || "info", data.message || "");
+    } catch (err) {
+      // ignore
+    }
+  });
+  derivStream.onerror = () => {
+    if (derivStatus) {
+      derivStatus.textContent = "Deriv stream: disconnected";
+    }
+  };
+}
+
+if (botStart) {
+  botStart.addEventListener("click", startBot);
+}
+if (botStop) {
+  botStop.addEventListener("click", stopBot);
+}
+
 async function init() {
   revealElements();
   await loadHealth();
@@ -531,8 +706,10 @@ async function init() {
   await loadAnalysis();
   await loadScan();
   await loadOpenContracts();
+  await loadBotStatus();
+  initDerivStream();
 }
 
 init();
 
-setInterval(loadOpenContracts, 2000);
+setInterval(loadOpenContracts, 10000);
