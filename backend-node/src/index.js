@@ -34,6 +34,7 @@ const CONTRACT_TTL_MS = 10 * 60 * 1000;
 const clients = new Set();
 let portfolioTimer = null;
 let lastStatus = "disconnected";
+const openContractSubs = new Map();
 
 function sendEvent(event, data) {
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -200,14 +201,17 @@ async function buyContract(proposal) {
 }
 
 async function subscribeOpenContract(contractId) {
-  await deriv.forget("open_contract");
+  if (!contractId) return;
+  if (openContractSubs.has(contractId)) return;
+  const label = `open_contract:${contractId}`;
   await deriv.subscribe(
-    "open_contract",
+    label,
     { proposal_open_contract: 1, contract_id: contractId },
     async (msg) => {
       const poc = msg.proposal_open_contract || {};
       const payload = {
         contract_id: poc.contract_id,
+        symbol: poc.symbol,
         status: poc.status,
         is_sold: Boolean(poc.is_sold),
         is_expired: Boolean(poc.is_expired),
@@ -221,6 +225,8 @@ async function subscribeOpenContract(contractId) {
         date_start: poc.date_start,
         date_expiry: poc.date_expiry,
         longcode: poc.longcode,
+        barrier: poc.barrier,
+        barrier2: poc.barrier2,
       };
       sendEvent("open_contract", payload);
       sendLog("debug", "Open contract update", { contract_id: payload.contract_id, status: payload.status });
@@ -231,9 +237,27 @@ async function subscribeOpenContract(contractId) {
       if (payload.is_sold) {
         sendEvent("trade_closed", payload);
         sendLog("info", "Trade closed", { contract_id: payload.contract_id, profit: payload.profit });
+        await deriv.forget(label);
+        openContractSubs.delete(contractId);
       }
     }
   );
+  openContractSubs.set(contractId, label);
+}
+
+async function syncOpenContractSubscriptions(openPositions) {
+  const activeIds = new Set((openPositions || []).map((p) => p.contract_id).filter(Boolean));
+  for (const id of activeIds) {
+    if (!openContractSubs.has(id)) {
+      await subscribeOpenContract(id);
+    }
+  }
+  for (const [contractId, label] of openContractSubs.entries()) {
+    if (!activeIds.has(contractId)) {
+      await deriv.forget(label);
+      openContractSubs.delete(contractId);
+    }
+  }
 }
 
 async function subscribeTicks(symbol) {
@@ -287,6 +311,7 @@ async function startPortfolioPolling() {
   portfolioTimer = setInterval(async () => {
     try {
       const open = await fetchOpenPositions();
+      await syncOpenContractSubscriptions(open);
       sendEvent("open_positions", { open_positions: open });
     } catch (err) {
       logger.warn("Portfolio poll failed", { error: err.message });
