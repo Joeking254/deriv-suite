@@ -136,7 +136,7 @@ def load_config() -> Config:
     symbol_cooldown_sec = _parse_int(os.getenv("SYMBOL_COOLDOWN_SEC", "60"), 60)
     post_trade_cooldown_sec = _parse_int(os.getenv("POST_TRADE_COOLDOWN_SEC", "10"), 10)
     global_trade_cooldown_sec = _parse_int(os.getenv("GLOBAL_TRADE_COOLDOWN_SEC", "30"), 30)
-    max_open_positions = _parse_int(os.getenv("MAX_OPEN_POSITIONS", "1"), 1)
+    max_open_positions = _parse_int(os.getenv("MAX_OPEN_POSITIONS", "0"), 0)
     loop_sleep_sec = _parse_int(os.getenv("LOOP_SLEEP_SEC", "5"), 5)
     dry_run = _parse_bool(os.getenv("DRY_RUN", "true"), True)
     paper_trade = _parse_bool(os.getenv("PAPER_TRADE", "false"), False)

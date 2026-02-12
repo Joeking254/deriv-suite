@@ -655,11 +655,12 @@ async def trade(request: Request) -> Dict[str, object]:
         duration_unit_value = params.get("duration_unit")
         adjusted = True
 
-    async with TRADE_LOCK:
+    async def run_trade() -> Dict[str, object]:
         ws = DerivWS(CONFIG.app_id)
         try:
             await ws.connect()
             await ws.request({"authorize": token})
+
             async def execute_trade() -> Dict[str, object]:
                 if wait:
                     return await place_trade(
@@ -681,7 +682,7 @@ async def trade(request: Request) -> Dict[str, object]:
                 return {**opened, "status": "open", "is_sold": False}
 
             try:
-                result = await execute_trade()
+                return await execute_trade()
             except DerivAPIError as exc:
                 if _is_duration_error(exc):
                     probed = await _probe_duration_cached(symbol, direction)
@@ -691,19 +692,23 @@ async def trade(request: Request) -> Dict[str, object]:
                             duration_value = new_duration
                             duration_unit_value = new_unit
                             adjusted = True
-                            result = await execute_trade()
-                        else:
-                            raise
-                    else:
+                            return await execute_trade()
                         raise
-                else:
                     raise
-        except DerivAPIError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+                raise
         finally:
             await ws.close()
+
+    try:
+        if wait:
+            async with TRADE_LOCK:
+                result = await run_trade()
+        else:
+            result = await run_trade()
+    except DerivAPIError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return {
         "symbol": symbol,

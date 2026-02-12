@@ -5,6 +5,7 @@ const symbolCount = document.getElementById("symbolCount");
 const modeBadge = document.getElementById("modeBadge");
 const tradeModeBadge = document.getElementById("tradeModeBadge");
 const balanceValue = document.getElementById("balanceValue");
+const pnlValue = document.getElementById("pnlValue");
 const durationLabel = document.getElementById("durationLabel");
 const granularityLabel = document.getElementById("granularityLabel");
 const signalPill = document.getElementById("signalPill");
@@ -34,6 +35,7 @@ let currentSignal = "WAIT";
 let symbolMeta = {};
 let activeContractId = null;
 let tradePoll = null;
+let activeMode = "demo";
 
 const refreshAnalysis = document.getElementById("refreshAnalysis");
 const refreshScan = document.getElementById("refreshScan");
@@ -115,11 +117,26 @@ async function loadBalance() {
     if (typeof data.balance === "number") {
       const cur = data.currency ? ` ${data.currency}` : "";
       balanceValue.textContent = `${data.balance.toFixed(2)}${cur}`;
+      if (pnlValue) {
+        const pnlKey = `pnlBase:${activeMode}`;
+        const stored = localStorage.getItem(pnlKey);
+        let base = stored ? Number.parseFloat(stored) : Number.NaN;
+        if (!Number.isFinite(base)) {
+          base = data.balance;
+          localStorage.setItem(pnlKey, `${base}`);
+        }
+        const pnl = data.balance - base;
+        const sign = pnl >= 0 ? "+" : "";
+        pnlValue.textContent = `${sign}${pnl.toFixed(2)}${cur}`;
+        pnlValue.style.color = pnl >= 0 ? "var(--signal-call)" : "var(--signal-put)";
+      }
     } else {
       balanceValue.textContent = "--";
+      if (pnlValue) pnlValue.textContent = "--";
     }
   } catch (err) {
     balanceValue.textContent = "--";
+    if (pnlValue) pnlValue.textContent = "--";
   }
 }
 
@@ -127,7 +144,8 @@ async function loadAuth() {
   if (!modeSelect || !tokenStatus) return;
   try {
     const data = await getJSON("/api/auth");
-    modeSelect.value = data.active_mode || "demo";
+    activeMode = data.active_mode || "demo";
+    modeSelect.value = activeMode;
     const demoSet = data.demo_token_set ? "set" : "missing";
     const liveSet = data.live_token_set ? "set" : "missing";
     tokenStatus.textContent = `Status: demo ${demoSet} | live ${liveSet}`;
@@ -387,7 +405,6 @@ async function placeTradeNow() {
       const profit = typeof data.profit === "number" ? data.profit.toFixed(2) : data.profit;
       const status = data.status ? ` | ${data.status}` : "";
       tradeStatus.textContent = `Trade status: ${data.direction} closed (profit ${profit}${currency})${duration}${adjusted}${status}${contract}`;
-      placeTrade.disabled = false;
       await loadBalance();
       return;
     }
@@ -397,9 +414,7 @@ async function placeTradeNow() {
   } catch (err) {
     tradeStatus.textContent = `Trade status: failed (${err.message || "unknown error"})`;
   } finally {
-    if (!activeContractId) {
-      placeTrade.disabled = false;
-    }
+    placeTrade.disabled = false;
   }
 }
 
