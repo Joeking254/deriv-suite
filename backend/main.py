@@ -655,6 +655,12 @@ async def trade(request: Request) -> Dict[str, object]:
         duration_unit_value = params.get("duration_unit")
         adjusted = True
 
+    state = {
+        "duration": duration_value,
+        "unit": duration_unit_value,
+        "adjusted": adjusted,
+    }
+
     async def run_trade() -> Dict[str, object]:
         ws = DerivWS(CONFIG.app_id)
         try:
@@ -668,16 +674,16 @@ async def trade(request: Request) -> Dict[str, object]:
                         symbol,
                         direction,
                         CONFIG,
-                        duration=duration_value,
-                        duration_unit=duration_unit_value,
+                        duration=state["duration"],
+                        duration_unit=state["unit"],
                     )
                 opened = await open_trade(
                     ws,
                     symbol,
                     direction,
                     CONFIG,
-                    duration=duration_value,
-                    duration_unit=duration_unit_value,
+                    duration=state["duration"],
+                    duration_unit=state["unit"],
                 )
                 return {**opened, "status": "open", "is_sold": False}
 
@@ -688,10 +694,10 @@ async def trade(request: Request) -> Dict[str, object]:
                     probed = await _probe_duration_cached(symbol, direction)
                     if probed:
                         new_duration, new_unit = probed
-                        if new_duration != duration_value or new_unit != duration_unit_value:
-                            duration_value = new_duration
-                            duration_unit_value = new_unit
-                            adjusted = True
+                        if new_duration != state["duration"] or new_unit != state["unit"]:
+                            state["duration"] = new_duration
+                            state["unit"] = new_unit
+                            state["adjusted"] = True
                             return await execute_trade()
                         raise
                     raise
@@ -710,6 +716,7 @@ async def trade(request: Request) -> Dict[str, object]:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+    adjusted = state["adjusted"]
     return {
         "symbol": symbol,
         "direction": direction,
