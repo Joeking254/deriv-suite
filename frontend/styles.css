@@ -222,6 +222,29 @@ body {
   margin-top: 18px;
 }
 
+.tick-panel {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(30, 26, 20, 0.08);
+}
+
+.tick-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+}
+
+#tickPrice {
+  color: var(--ink);
+  font-family: "JetBrains Mono", monospace;
+}
+
 .meta-label {
   margin: 0;
   font-size: 0.8rem;

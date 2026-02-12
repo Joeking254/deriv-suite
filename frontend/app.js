@@ -37,6 +37,8 @@ const botStop = document.getElementById("botStop");
 const botStatus = document.getElementById("botStatus");
 const derivStatus = document.getElementById("derivStatus");
 const botLogs = document.getElementById("botLogs");
+const tickCanvas = document.getElementById("tickCanvas");
+const tickPrice = document.getElementById("tickPrice");
 
 let currentSignal = "WAIT";
 let symbolMeta = {};
@@ -44,6 +46,10 @@ let activeContractId = null;
 let tradePoll = null;
 let activeMode = "demo";
 let derivStream = null;
+let tickSymbol = null;
+let tickData = [];
+let openContractDetails = {};
+let lastOpenPositions = [];
 
 const refreshAnalysis = document.getElementById("refreshAnalysis");
 const refreshScan = document.getElementById("refreshScan");
@@ -175,23 +181,28 @@ function renderOpenContracts(contracts) {
   }
   openContractsEmpty.style.display = "none";
   contracts.forEach((item) => {
+    const merged = { ...item, ...(openContractDetails[item.contract_id] || {}) };
     const card = document.createElement("div");
     card.className = "position-card";
-    const profit = typeof item.profit === "number" ? item.profit : 0;
-    const cur = item.currency ? ` ${item.currency}` : "";
+    const profit = typeof merged.profit === "number" ? merged.profit : 0;
+    const cur = merged.currency ? ` ${merged.currency}` : "";
     const sign = profit >= 0 ? "+" : "";
     const pnlText = `${sign}${profit.toFixed(2)}${cur}`;
-    const symbolName = symbolMeta[item.symbol]?.display_name || item.symbol || "--";
-    const type = item.contract_type || "--";
+    const symbolName = symbolMeta[merged.symbol]?.display_name || merged.symbol || "--";
+    const type = merged.contract_type || "--";
     const typeLabel = type === "CALL" ? "Rise" : type === "PUT" ? "Fall" : type;
     const typeClass = type === "CALL" ? "call" : type === "PUT" ? "put" : "wait";
-    const stake = typeof item.buy_price === "number" ? item.buy_price.toFixed(2) : "--";
-    const payout = typeof item.payout === "number" ? item.payout.toFixed(2) : "--";
-    const timeLeft = formatTimeLeft(item.date_expiry);
-    const started = formatTimestamp(item.date_start);
-    const currentSpot = typeof item.current_spot === "number" ? item.current_spot.toFixed(5) : "--";
-    const entrySpot = typeof item.entry_spot === "number" ? item.entry_spot.toFixed(5) : "--";
-    const pct = typeof item.profit_percentage === "number" ? `${item.profit_percentage.toFixed(2)}%` : "--";
+    const stake = typeof merged.buy_price === "number" ? merged.buy_price.toFixed(2) : "--";
+    const payout = typeof merged.payout === "number" ? merged.payout.toFixed(2) : "--";
+    const contractValue = typeof merged.bid_price === "number" ? merged.bid_price.toFixed(2) : stake;
+    const timeLeft = formatTimeLeft(merged.date_expiry);
+    const started = formatTimestamp(merged.date_start);
+    const currentSpot = typeof merged.current_spot === "number" ? merged.current_spot.toFixed(5) : "--";
+    const entrySpot = typeof merged.entry_spot === "number" ? merged.entry_spot.toFixed(5) : "--";
+    const pct = typeof merged.profit_percentage === "number" ? `${merged.profit_percentage.toFixed(2)}%` : "--";
+    const longcode = merged.longcode ? `${merged.longcode}` : "";
+    const barrier = merged.barrier ? `Barrier: ${merged.barrier}` : "";
+    const barrier2 = merged.barrier2 ? `Barrier2: ${merged.barrier2}` : "";
 
     card.innerHTML = `
       <div class="position-top">
@@ -204,8 +215,11 @@ function renderOpenContracts(contracts) {
       <div class="position-meta">
         <span>Time left: ${timeLeft}</span>
         <span>Opened: ${started}</span>
-        <span>ID: ${item.contract_id || "--"}</span>
+        <span>ID: ${merged.contract_id || "--"}</span>
+        ${barrier ? `<span>${barrier}</span>` : ""}
+        ${barrier2 ? `<span>${barrier2}</span>` : ""}
       </div>
+      ${longcode ? `<div class="hint">${longcode}</div>` : ""}
       <div class="position-stats">
         <div class="position-stat">
           Stake
@@ -214,6 +228,10 @@ function renderOpenContracts(contracts) {
         <div class="position-stat">
           Payout
           <strong>${payout}${cur}</strong>
+        </div>
+        <div class="position-stat">
+          Contract value
+          <strong>${contractValue}${cur}</strong>
         </div>
         <div class="position-stat">
           Entry spot
@@ -253,11 +271,13 @@ async function loadOpenContracts() {
   if (!openContractsList || !openContractsEmpty) return;
   try {
     const data = await getJSON("/api/deriv/open-positions");
-    renderOpenContracts(data.open_positions || []);
+    lastOpenPositions = data.open_positions || [];
+    renderOpenContracts(lastOpenPositions);
   } catch (err) {
     try {
       const fallback = await getJSON("/api/open-contracts");
-      renderOpenContracts(fallback.open_contracts || []);
+      lastOpenPositions = fallback.open_contracts || [];
+      renderOpenContracts(lastOpenPositions);
     } catch (err2) {
       openContractsList.innerHTML = "";
       openContractsEmpty.textContent = "Unable to load open contracts.";
@@ -496,6 +516,7 @@ refreshAnalysis.addEventListener("click", loadAnalysis);
 refreshScan.addEventListener("click", loadScan);
 scanNow.addEventListener("click", loadScan);
 symbolSelect.addEventListener("change", loadAnalysis);
+symbolSelect.addEventListener("change", () => subscribeTicks(symbolSelect.value));
 if (saveTokens) {
   saveTokens.addEventListener("click", saveAuth);
 }
@@ -627,7 +648,8 @@ function initDerivStream() {
   derivStream.addEventListener("open_positions", (event) => {
     try {
       const data = JSON.parse(event.data || "{}");
-      renderOpenContracts(data.open_positions || []);
+      lastOpenPositions = data.open_positions || [];
+      renderOpenContracts(lastOpenPositions);
     } catch (err) {
       // ignore
     }
@@ -635,8 +657,10 @@ function initDerivStream() {
   derivStream.addEventListener("tick", (event) => {
     try {
       const data = JSON.parse(event.data || "{}");
-      if (data.symbol && data.quote) {
-        appendBotLog("debug", `Tick ${data.symbol} ${data.quote}`);
+      if (data.symbol && typeof data.quote === "number") {
+        if (tickSymbol === data.symbol) {
+          updateTick(data.quote);
+        }
       }
     } catch (err) {
       // ignore
@@ -645,6 +669,21 @@ function initDerivStream() {
   derivStream.addEventListener("open_contract", (event) => {
     try {
       const data = JSON.parse(event.data || "{}");
+      if (data.contract_id) {
+        openContractDetails[data.contract_id] = {
+          bid_price: data.bid_price,
+          longcode: data.longcode,
+          barrier: data.barrier,
+          barrier2: data.barrier2,
+          profit_percentage: data.profit_percentage,
+          current_spot: data.current_spot,
+          entry_spot: data.entry_spot,
+          profit: data.profit,
+          date_start: data.date_start,
+          date_expiry: data.date_expiry,
+        };
+        renderOpenContracts(lastOpenPositions);
+      }
       appendBotLog("info", `Open contract update ${data.contract_id || ""}`);
     } catch (err) {
       // ignore
@@ -696,6 +735,62 @@ if (botStop) {
   botStop.addEventListener("click", stopBot);
 }
 
+async function subscribeTicks(symbol) {
+  if (!symbol) return;
+  if (tickSymbol === symbol) return;
+  tickSymbol = symbol;
+  tickData = [];
+  drawTickChart();
+  if (tickPrice) tickPrice.textContent = "--";
+  try {
+    await fetch("/api/deriv/stream/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol }),
+    });
+  } catch (err) {
+    // ignore
+  }
+}
+
+function updateTick(quote) {
+  tickData.push(quote);
+  if (tickData.length > 60) {
+    tickData.shift();
+  }
+  if (tickPrice) {
+    tickPrice.textContent = quote.toFixed(5);
+  }
+  drawTickChart();
+}
+
+function drawTickChart() {
+  if (!tickCanvas) return;
+  const ctx = tickCanvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, tickCanvas.width, tickCanvas.height);
+  if (tickData.length < 2) return;
+  const min = Math.min(...tickData);
+  const max = Math.max(...tickData);
+  const range = max - min || 1;
+  const w = tickCanvas.width;
+  const h = tickCanvas.height;
+  ctx.beginPath();
+  tickData.forEach((val, idx) => {
+    const x = (idx / (tickData.length - 1)) * w;
+    const y = h - ((val - min) / range) * h;
+    if (idx === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+  });
+  const rising = tickData[tickData.length - 1] >= tickData[0];
+  ctx.strokeStyle = rising ? "rgba(31, 122, 115, 0.9)" : "rgba(193, 69, 44, 0.9)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
 async function init() {
   revealElements();
   await loadHealth();
@@ -703,6 +798,7 @@ async function init() {
   await loadAuth();
   await loadBalance();
   await loadSymbols();
+  await subscribeTicks(symbolSelect.value);
   await loadAnalysis();
   await loadScan();
   await loadOpenContracts();
