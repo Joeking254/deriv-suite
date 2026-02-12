@@ -753,6 +753,7 @@ async def open_contracts() -> Dict[str, object]:
                     "buy_price": float(item.get("buy_price", 0) or 0),
                     "payout": item.get("payout"),
                     "current_spot": item.get("current_spot"),
+                    "entry_spot": item.get("entry_spot"),
                     "profit": float(profit or 0),
                     "currency": item.get("currency") or CONFIG.currency,
                     "date_start": item.get("date_start"),

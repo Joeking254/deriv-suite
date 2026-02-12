@@ -166,6 +166,8 @@ function renderOpenContracts(contracts) {
     const payout = typeof item.payout === "number" ? item.payout.toFixed(2) : "--";
     const timeLeft = formatTimeLeft(item.date_expiry);
     const started = formatTimestamp(item.date_start);
+    const currentSpot = typeof item.current_spot === "number" ? item.current_spot.toFixed(5) : "--";
+    const entrySpot = typeof item.entry_spot === "number" ? item.entry_spot.toFixed(5) : "--";
 
     card.innerHTML = `
       <div class="position-top">
@@ -188,6 +190,14 @@ function renderOpenContracts(contracts) {
         <div class="position-stat">
           Payout
           <strong>${payout}${cur}</strong>
+        </div>
+        <div class="position-stat">
+          Entry spot
+          <strong>${entrySpot}</strong>
+        </div>
+        <div class="position-stat">
+          Current spot
+          <strong>${currentSpot}</strong>
         </div>
         <div class="position-stat">
           PnL
@@ -525,4 +535,4 @@ async function init() {
 
 init();
 
-setInterval(loadOpenContracts, 10000);
+setInterval(loadOpenContracts, 2000);
