@@ -1,12 +1,11 @@
 from deriv_ws import DerivAPIError, DerivWS
 
 
-async def place_trade(
+async def open_trade(
     ws: DerivWS,
     symbol: str,
     direction: str,
     config,
-    logger=None,
     duration: int | None = None,
     duration_unit: str | None = None,
 ) -> dict:
@@ -37,6 +36,17 @@ async def place_trade(
     if not contract_id:
         raise DerivAPIError("buy", "Missing contract id")
 
+    return {
+        "contract_id": contract_id,
+        "buy_price": float(buy_info.get("buy_price") or ask_price or 0),
+        "payout": buy_info.get("payout"),
+        "currency": config.currency,
+        "duration": duration_value,
+        "duration_unit": duration_unit_value,
+    }
+
+
+async def wait_for_close(ws: DerivWS, contract_id: int, logger=None, symbol: str | None = None, direction: str | None = None) -> dict:
     def done_predicate(msg: dict) -> bool:
         poc = msg.get("proposal_open_contract", {})
         status = poc.get("status")
@@ -51,7 +61,7 @@ async def place_trade(
         buy_price = float(poc.get("buy_price", 0) or 0)
         profit = sell_price - buy_price
 
-    if logger:
+    if logger and symbol and direction:
         logger.info(
             "Trade closed | symbol=%s direction=%s profit=%s status=%s",
             symbol,
@@ -59,14 +69,25 @@ async def place_trade(
             profit,
             poc.get("status"),
         )
+
     return {
-        "contract_id": contract_id,
-        "buy_price": float(poc.get("buy_price", buy_info.get("buy_price") or ask_price) or 0),
         "sell_price": float(poc.get("sell_price", 0) or 0),
         "profit": float(profit),
         "status": poc.get("status"),
-        "payout": poc.get("payout"),
-        "currency": config.currency,
-        "duration": duration_value,
-        "duration_unit": duration_unit_value,
+        "buy_price": float(poc.get("buy_price", 0) or 0),
+        "is_sold": bool(poc.get("is_sold")),
     }
+
+
+async def place_trade(
+    ws: DerivWS,
+    symbol: str,
+    direction: str,
+    config,
+    logger=None,
+    duration: int | None = None,
+    duration_unit: str | None = None,
+) -> dict:
+    opened = await open_trade(ws, symbol, direction, config, duration=duration, duration_unit=duration_unit)
+    closed = await wait_for_close(ws, opened["contract_id"], logger=logger, symbol=symbol, direction=direction)
+    return {**opened, **closed}

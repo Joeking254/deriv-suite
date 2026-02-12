@@ -32,6 +32,8 @@ const durationHint = document.getElementById("durationHint");
 
 let currentSignal = "WAIT";
 let symbolMeta = {};
+let activeContractId = null;
+let tradePoll = null;
 
 const refreshAnalysis = document.getElementById("refreshAnalysis");
 const refreshScan = document.getElementById("refreshScan");
@@ -288,6 +290,44 @@ function applyTradeParams(recommended, tradeParams) {
   durationHint.textContent = `Allowed duration${contractLabel}: ${minLabel} to ${maxLabel}${recommendedLabel}`;
 }
 
+function clearTradePoll() {
+  if (tradePoll) {
+    clearTimeout(tradePoll);
+    tradePoll = null;
+  }
+  activeContractId = null;
+}
+
+async function pollContract(contractId, attempt = 0) {
+  if (!tradeStatus || !contractId) return;
+  const maxAttempts = 160;
+  try {
+    const data = await getJSON(`/api/contract?contract_id=${encodeURIComponent(contractId)}`);
+    const status = data.status || (data.is_sold ? "sold" : "open");
+    const profit = typeof data.profit === "number" ? data.profit.toFixed(2) : "--";
+    const currency = data.currency ? ` ${data.currency}` : "";
+    const contract = data.contract_id ? ` | id ${data.contract_id}` : "";
+    if (data.is_sold) {
+      tradeStatus.textContent = `Trade status: closed (${status}) | profit ${profit}${currency}${contract}`;
+      clearTradePoll();
+      placeTrade.disabled = false;
+      await loadBalance();
+      return;
+    }
+    tradeStatus.textContent = `Trade status: open (${status}) | P/L ${profit}${currency}${contract}`;
+  } catch (err) {
+    tradeStatus.textContent = `Trade status: error (${err.message || "poll failed"})`;
+  }
+
+  if (attempt >= maxAttempts) {
+    tradeStatus.textContent = "Trade status: still open (check later)";
+    placeTrade.disabled = false;
+    clearTradePoll();
+    return;
+  }
+  tradePoll = setTimeout(() => pollContract(contractId, attempt + 1), 3000);
+}
+
 function revealElements() {
   const elements = Array.from(document.querySelectorAll("[data-reveal]"));
   elements.forEach((el, index) => {
@@ -313,7 +353,8 @@ async function placeTradeNow() {
   const symbol = symbolSelect.value;
   if (!symbol) return;
   placeTrade.disabled = true;
-  tradeStatus.textContent = "Trade status: placing trade (wait for contract close)...";
+  tradeStatus.textContent = "Trade status: placing trade...";
+  clearTradePoll();
   try {
     const res = await fetch("/api/trade", {
       method: "POST",
@@ -321,6 +362,7 @@ async function placeTradeNow() {
       body: JSON.stringify({
         symbol,
         direction: currentSignal,
+        wait: false,
       }),
     });
     if (!res.ok) {
@@ -337,17 +379,27 @@ async function placeTradeNow() {
       throw new Error(detail);
     }
     const data = await res.json();
-    const profit = typeof data.profit === "number" ? data.profit.toFixed(2) : data.profit;
     const currency = data.currency ? ` ${data.currency}` : "";
-    const status = data.status ? ` | ${data.status}` : "";
     const contract = data.contract_id ? ` | id ${data.contract_id}` : "";
     const duration = data.duration ? ` | ${data.duration}${data.duration_unit || ""}` : "";
     const adjusted = data.duration_adjusted ? " | adjusted" : "";
-    tradeStatus.textContent = `Trade status: ${data.direction} closed (profit ${profit}${currency})${duration}${adjusted}${status}${contract}`;
+    if (data.is_sold) {
+      const profit = typeof data.profit === "number" ? data.profit.toFixed(2) : data.profit;
+      const status = data.status ? ` | ${data.status}` : "";
+      tradeStatus.textContent = `Trade status: ${data.direction} closed (profit ${profit}${currency})${duration}${adjusted}${status}${contract}`;
+      placeTrade.disabled = false;
+      await loadBalance();
+      return;
+    }
+    tradeStatus.textContent = `Trade status: open${duration}${adjusted}${contract}`;
+    activeContractId = data.contract_id;
+    tradePoll = setTimeout(() => pollContract(activeContractId, 0), 2000);
   } catch (err) {
     tradeStatus.textContent = `Trade status: failed (${err.message || "unknown error"})`;
   } finally {
-    placeTrade.disabled = false;
+    if (!activeContractId) {
+      placeTrade.disabled = false;
+    }
   }
 }
 

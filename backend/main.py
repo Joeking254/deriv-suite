@@ -24,7 +24,7 @@ from deriv_ws import DerivAPIError, DerivWS  # noqa: E402
 from market_data import extract_closes, fetch_symbols, get_candles  # noqa: E402
 from strategy import compute_indicators  # noqa: E402
 from token_store import load_tokens, resolve_token, update_tokens  # noqa: E402
-from trading import place_trade  # noqa: E402
+from trading import open_trade, place_trade  # noqa: E402
 
 load_dotenv(ROOT / "bot" / ".env")
 CONFIG = load_config()
@@ -157,6 +157,11 @@ def _duration_in_range(amount: int, unit: str, min_d: str | None, max_d: str | N
     if amount_sec is None or min_sec is None or max_sec is None:
         return False
     return min_sec <= amount_sec <= max_sec
+
+
+def _is_duration_error(exc: DerivAPIError) -> bool:
+    text = f"{exc.code} {exc.message}".lower()
+    return "duration" in text
 
 
 async def _get_contracts_cached(symbol: str, product_type: str = "basic") -> Dict[str, object]:
@@ -544,6 +549,37 @@ async def balance() -> Dict[str, object]:
         await ws.close()
 
 
+@app.get("/api/contract")
+async def contract_status(contract_id: int = Query(..., ge=1)) -> Dict[str, object]:
+    ws = await _with_ws()
+    try:
+        resp = await ws.request({"proposal_open_contract": 1, "contract_id": contract_id})
+        poc = resp.get("proposal_open_contract", {})
+        profit = poc.get("profit")
+        if profit is None:
+            sell_price = float(poc.get("sell_price", 0) or 0)
+            buy_price = float(poc.get("buy_price", 0) or 0)
+            profit = sell_price - buy_price
+        return {
+            "contract_id": contract_id,
+            "status": poc.get("status"),
+            "is_sold": bool(poc.get("is_sold")),
+            "profit": float(profit or 0),
+            "buy_price": float(poc.get("buy_price", 0) or 0),
+            "sell_price": float(poc.get("sell_price", 0) or 0),
+            "payout": poc.get("payout"),
+            "currency": poc.get("currency") or CONFIG.currency,
+            "current_spot": poc.get("current_spot"),
+            "entry_spot": poc.get("entry_spot"),
+            "date_start": poc.get("date_start"),
+            "date_expiry": poc.get("date_expiry"),
+        }
+    except DerivAPIError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        await ws.close()
+
+
 @app.post("/api/trade")
 async def trade(request: Request) -> Dict[str, object]:
     trade_mode = (CONFIG.trade_mode or "auto").lower()
@@ -562,6 +598,13 @@ async def trade(request: Request) -> Dict[str, object]:
     direction = str(payload.get("direction", "")).strip().upper()
     duration = payload.get("duration")
     duration_unit = payload.get("duration_unit")
+    wait = payload.get("wait", False)
+    if isinstance(wait, str):
+        wait = wait.strip().lower() in ("1", "true", "yes", "y")
+    elif isinstance(wait, (int, float)):
+        wait = bool(wait)
+    else:
+        wait = bool(wait)
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol is required")
 
@@ -617,14 +660,44 @@ async def trade(request: Request) -> Dict[str, object]:
         try:
             await ws.connect()
             await ws.request({"authorize": token})
-            result = await place_trade(
-                ws,
-                symbol,
-                direction,
-                CONFIG,
-                duration=duration_value,
-                duration_unit=duration_unit_value,
-            )
+            async def execute_trade() -> Dict[str, object]:
+                if wait:
+                    return await place_trade(
+                        ws,
+                        symbol,
+                        direction,
+                        CONFIG,
+                        duration=duration_value,
+                        duration_unit=duration_unit_value,
+                    )
+                opened = await open_trade(
+                    ws,
+                    symbol,
+                    direction,
+                    CONFIG,
+                    duration=duration_value,
+                    duration_unit=duration_unit_value,
+                )
+                return {**opened, "status": "open", "is_sold": False}
+
+            try:
+                result = await execute_trade()
+            except DerivAPIError as exc:
+                if _is_duration_error(exc):
+                    probed = await _probe_duration_cached(symbol, direction)
+                    if probed:
+                        new_duration, new_unit = probed
+                        if new_duration != duration_value or new_unit != duration_unit_value:
+                            duration_value = new_duration
+                            duration_unit_value = new_unit
+                            adjusted = True
+                            result = await execute_trade()
+                        else:
+                            raise
+                    else:
+                        raise
+                else:
+                    raise
         except DerivAPIError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
