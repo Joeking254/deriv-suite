@@ -39,6 +39,18 @@ const derivStatus = document.getElementById("derivStatus");
 const botLogs = document.getElementById("botLogs");
 const tickCanvas = document.getElementById("tickCanvas");
 const tickPrice = document.getElementById("tickPrice");
+const botStake = document.getElementById("botStake");
+const botDuration = document.getElementById("botDuration");
+const botDurationUnit = document.getElementById("botDurationUnit");
+const botContractType = document.getElementById("botContractType");
+const botLoopSec = document.getElementById("botLoopSec");
+const botMaxOpen = document.getElementById("botMaxOpen");
+const botMaxDailyLoss = document.getElementById("botMaxDailyLoss");
+const botMaxConsec = document.getElementById("botMaxConsec");
+const botCooldown = document.getElementById("botCooldown");
+const botSymbols = document.getElementById("botSymbols");
+const botSave = document.getElementById("botSave");
+const botSettingsStatus = document.getElementById("botSettingsStatus");
 
 let currentSignal = "WAIT";
 let symbolMeta = {};
@@ -627,8 +639,65 @@ async function loadBotStatus() {
     if (data.last_error) {
       appendBotLog("error", data.last_error);
     }
+    if (botSettingsStatus && data.risk) {
+      botSettingsStatus.textContent = `Settings: daily pnl ${data.risk.daily_pnl?.toFixed?.(2) ?? "--"} | losses ${data.risk.consecutive_losses ?? "--"}`;
+    }
   } catch (err) {
     botStatus.textContent = "Bot status: unavailable";
+  }
+}
+
+async function loadBotSettings() {
+  try {
+    const data = await getJSON("/api/deriv/settings");
+    if (data.bot) {
+      if (botStake) botStake.value = data.bot.stake ?? "";
+      if (botDuration) botDuration.value = data.bot.duration ?? "";
+      if (botDurationUnit) botDurationUnit.value = data.bot.duration_unit ?? "m";
+      if (botContractType) botContractType.value = data.bot.contract_type ?? "CALL";
+      if (botLoopSec) botLoopSec.value = data.bot.loop_sec ?? "";
+      if (botMaxOpen) botMaxOpen.value = data.bot.max_open_positions ?? 0;
+      if (botSymbols) botSymbols.value = (data.bot.symbols || []).join(", ");
+    }
+    if (data.risk) {
+      if (botMaxDailyLoss) botMaxDailyLoss.value = data.risk.max_daily_loss ?? 0;
+      if (botMaxConsec) botMaxConsec.value = data.risk.max_consecutive_losses ?? 0;
+      if (botCooldown) botCooldown.value = data.risk.global_cooldown_sec ?? 0;
+    }
+    if (botSettingsStatus) botSettingsStatus.textContent = "Settings: loaded";
+  } catch (err) {
+    if (botSettingsStatus) botSettingsStatus.textContent = "Settings: unavailable";
+  }
+}
+
+async function saveBotSettings() {
+  if (!botSettingsStatus) return;
+  const payload = {
+    stake: botStake ? Number(botStake.value || 0) : undefined,
+    duration: botDuration ? Number(botDuration.value || 0) : undefined,
+    duration_unit: botDurationUnit ? botDurationUnit.value : undefined,
+    contract_type: botContractType ? botContractType.value : undefined,
+    loop_sec: botLoopSec ? Number(botLoopSec.value || 0) : undefined,
+    max_open_positions: botMaxOpen ? Number(botMaxOpen.value || 0) : undefined,
+    max_daily_loss: botMaxDailyLoss ? Number(botMaxDailyLoss.value || 0) : undefined,
+    max_consecutive_losses: botMaxConsec ? Number(botMaxConsec.value || 0) : undefined,
+    global_cooldown_sec: botCooldown ? Number(botCooldown.value || 0) : undefined,
+    symbols: botSymbols ? botSymbols.value : undefined,
+  };
+  try {
+    const res = await fetch("/api/deriv/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || "Settings save failed");
+    }
+    botSettingsStatus.textContent = "Settings: saved";
+    await loadBotStatus();
+  } catch (err) {
+    botSettingsStatus.textContent = `Settings: error (${err.message || "failed"})`;
   }
 }
 
@@ -734,6 +803,9 @@ if (botStart) {
 if (botStop) {
   botStop.addEventListener("click", stopBot);
 }
+if (botSave) {
+  botSave.addEventListener("click", saveBotSettings);
+}
 
 async function subscribeTicks(symbol) {
   if (!symbol) return;
@@ -803,6 +875,7 @@ async function init() {
   await loadScan();
   await loadOpenContracts();
   await loadBotStatus();
+  await loadBotSettings();
   initDerivStream();
 }
 

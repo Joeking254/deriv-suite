@@ -87,6 +87,34 @@ let botState = {
   open_positions: 0,
 };
 let tickSymbol = null;
+const closedContracts = new Set();
+const riskState = {
+  day: new Date().toISOString().slice(0, 10),
+  dailyPnl: 0,
+  consecutiveLosses: 0,
+  lastTradeAt: 0,
+};
+
+function rollRiskDay() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== riskState.day) {
+    riskState.day = today;
+    riskState.dailyPnl = 0;
+    riskState.consecutiveLosses = 0;
+  }
+}
+
+function recordTrade(profit) {
+  rollRiskDay();
+  const value = Number(profit || 0);
+  riskState.dailyPnl += value;
+  if (value < 0) {
+    riskState.consecutiveLosses += 1;
+  } else {
+    riskState.consecutiveLosses = 0;
+  }
+  riskState.lastTradeAt = Date.now();
+}
 
 function parseDuration(value) {
   if (!value) return null;
@@ -237,6 +265,10 @@ async function subscribeOpenContract(contractId) {
       if (payload.is_sold) {
         sendEvent("trade_closed", payload);
         sendLog("info", "Trade closed", { contract_id: payload.contract_id, profit: payload.profit });
+        if (!closedContracts.has(payload.contract_id)) {
+          closedContracts.add(payload.contract_id);
+          recordTrade(payload.profit);
+        }
         await deriv.forget(label);
         openContractSubs.delete(contractId);
       }
@@ -341,13 +373,41 @@ let botSettings = {
   duration: Number(process.env.BOT_DURATION || "1"),
   duration_unit: process.env.BOT_DURATION_UNIT || "m",
   contract_type: process.env.BOT_CONTRACT_TYPE || "CALL",
-  symbols: [],
+  symbols: (process.env.BOT_SYMBOLS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
   maxOpen: Number(process.env.BOT_MAX_OPEN_POSITIONS || "0"),
 };
+let riskSettings = {
+  maxDailyLoss: Number(process.env.BOT_MAX_DAILY_LOSS || "0"),
+  maxConsecutiveLosses: Number(process.env.BOT_MAX_CONSECUTIVE_LOSSES || "0"),
+  globalCooldownSec: Number(process.env.BOT_GLOBAL_COOLDOWN_SEC || "0"),
+};
+
+function canTradeNow() {
+  rollRiskDay();
+  if (riskSettings.maxDailyLoss > 0 && riskState.dailyPnl <= -riskSettings.maxDailyLoss) {
+    return false;
+  }
+  if (riskSettings.maxConsecutiveLosses > 0 && riskState.consecutiveLosses >= riskSettings.maxConsecutiveLosses) {
+    return false;
+  }
+  if (riskSettings.globalCooldownSec > 0 && riskState.lastTradeAt) {
+    const elapsed = (Date.now() - riskState.lastTradeAt) / 1000;
+    if (elapsed < riskSettings.globalCooldownSec) {
+      return false;
+    }
+  }
+  return true;
+}
 
 async function botTick() {
   if (!botState.running) return;
   try {
+    if (!canTradeNow()) {
+      return;
+    }
     if (botSettings.maxOpen > 0 && botState.open_positions >= botSettings.maxOpen) {
       return;
     }
@@ -383,6 +443,9 @@ async function startBot(payload = {}) {
   botSettings.duration_unit = payload.duration_unit || botSettings.duration_unit || "m";
   botSettings.contract_type = payload.contract_type || botSettings.contract_type || "CALL";
   botSettings.maxOpen = Number(payload.max_open_positions ?? botSettings.maxOpen ?? 0);
+  riskSettings.maxDailyLoss = Number(payload.max_daily_loss ?? riskSettings.maxDailyLoss ?? 0);
+  riskSettings.maxConsecutiveLosses = Number(payload.max_consecutive_losses ?? riskSettings.maxConsecutiveLosses ?? 0);
+  riskSettings.globalCooldownSec = Number(payload.global_cooldown_sec ?? riskSettings.globalCooldownSec ?? 0);
 
   if (payload.symbols && Array.isArray(payload.symbols) && payload.symbols.length > 0) {
     botSettings.symbols = [...payload.symbols];
@@ -560,7 +623,72 @@ app.get("/api/deriv/bot/status", async (req, res) => {
     last_error: botState.last_error,
     last_trade: botState.last_trade,
     open_positions: botState.open_positions,
+    risk: {
+      daily_pnl: riskState.dailyPnl,
+      consecutive_losses: riskState.consecutiveLosses,
+      last_trade_at: riskState.lastTradeAt,
+      max_daily_loss: riskSettings.maxDailyLoss,
+      max_consecutive_losses: riskSettings.maxConsecutiveLosses,
+      global_cooldown_sec: riskSettings.globalCooldownSec,
+    },
   });
+});
+
+app.get("/api/deriv/settings", async (req, res) => {
+  res.json({
+    bot: {
+      loop_sec: botSettings.loopSec,
+      stake: botSettings.stake,
+      duration: botSettings.duration,
+      duration_unit: botSettings.duration_unit,
+      contract_type: botSettings.contract_type,
+      max_open_positions: botSettings.maxOpen,
+      symbols: botSettings.symbols,
+    },
+    risk: {
+      max_daily_loss: riskSettings.maxDailyLoss,
+      max_consecutive_losses: riskSettings.maxConsecutiveLosses,
+      global_cooldown_sec: riskSettings.globalCooldownSec,
+    },
+    state: {
+      daily_pnl: riskState.dailyPnl,
+      consecutive_losses: riskState.consecutiveLosses,
+      last_trade_at: riskState.lastTradeAt,
+    },
+  });
+});
+
+app.post("/api/deriv/settings", async (req, res) => {
+  const payload = req.body || {};
+  if (payload.loop_sec != null) botSettings.loopSec = Number(payload.loop_sec) || botSettings.loopSec;
+  if (payload.stake != null) botSettings.stake = Number(payload.stake) || botSettings.stake;
+  if (payload.duration != null) botSettings.duration = Number(payload.duration) || botSettings.duration;
+  if (payload.duration_unit) botSettings.duration_unit = String(payload.duration_unit);
+  if (payload.contract_type) botSettings.contract_type = String(payload.contract_type);
+  if (payload.max_open_positions != null) botSettings.maxOpen = Number(payload.max_open_positions) || 0;
+  if (payload.max_daily_loss != null) riskSettings.maxDailyLoss = Number(payload.max_daily_loss) || 0;
+  if (payload.max_consecutive_losses != null) {
+    riskSettings.maxConsecutiveLosses = Number(payload.max_consecutive_losses) || 0;
+  }
+  if (payload.global_cooldown_sec != null) {
+    riskSettings.globalCooldownSec = Number(payload.global_cooldown_sec) || 0;
+  }
+  if (payload.symbols) {
+    if (Array.isArray(payload.symbols)) {
+      botSettings.symbols = payload.symbols.map((s) => String(s).trim()).filter(Boolean);
+    } else if (typeof payload.symbols === "string") {
+      botSettings.symbols = payload.symbols
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
+
+  if (botState.running) {
+    if (botTimer) clearInterval(botTimer);
+    botTimer = setInterval(botTick, botSettings.loopSec * 1000);
+  }
+  res.json({ status: "ok" });
 });
 
 app.get("/api/deriv/trades/history", async (req, res) => {

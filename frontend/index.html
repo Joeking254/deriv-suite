@@ -181,6 +181,61 @@
           </div>
           <p class="hint" id="botStatus">Bot status: --</p>
           <p class="hint" id="derivStatus">Deriv stream: --</p>
+          <div class="settings-grid">
+            <div>
+              <label class="input-label" for="botStake">Stake</label>
+              <input class="input" id="botStake" type="number" step="0.01" min="0" />
+            </div>
+            <div>
+              <label class="input-label" for="botDuration">Duration</label>
+              <input class="input" id="botDuration" type="number" min="1" />
+            </div>
+            <div>
+              <label class="input-label" for="botDurationUnit">Unit</label>
+              <select class="select" id="botDurationUnit">
+                <option value="t">ticks</option>
+                <option value="s">seconds</option>
+                <option value="m">minutes</option>
+                <option value="h">hours</option>
+                <option value="d">days</option>
+              </select>
+            </div>
+            <div>
+              <label class="input-label" for="botContractType">Contract</label>
+              <select class="select" id="botContractType">
+                <option value="CALL">CALL</option>
+                <option value="PUT">PUT</option>
+              </select>
+            </div>
+            <div>
+              <label class="input-label" for="botLoopSec">Loop Seconds</label>
+              <input class="input" id="botLoopSec" type="number" min="1" />
+            </div>
+            <div>
+              <label class="input-label" for="botMaxOpen">Max Open Positions</label>
+              <input class="input" id="botMaxOpen" type="number" min="0" />
+            </div>
+            <div>
+              <label class="input-label" for="botMaxDailyLoss">Max Daily Loss</label>
+              <input class="input" id="botMaxDailyLoss" type="number" step="0.01" min="0" />
+            </div>
+            <div>
+              <label class="input-label" for="botMaxConsec">Max Consecutive Losses</label>
+              <input class="input" id="botMaxConsec" type="number" min="0" />
+            </div>
+            <div>
+              <label class="input-label" for="botCooldown">Global Cooldown (sec)</label>
+              <input class="input" id="botCooldown" type="number" min="0" />
+            </div>
+            <div class="settings-wide">
+              <label class="input-label" for="botSymbols">Symbols (comma-separated)</label>
+              <textarea class="input" id="botSymbols" rows="2" placeholder="frxEURUSD, frxGBPUSD"></textarea>
+            </div>
+          </div>
+          <div class="hero-actions">
+            <button class="btn primary" id="botSave">Save Settings</button>
+          </div>
+          <p class="hint" id="botSettingsStatus">Settings: --</p>
           <div class="log-box" id="botLogs"></div>
         </div>
       </section>
