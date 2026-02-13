@@ -231,6 +231,16 @@
               <label class="input-label" for="botSymbols">Symbols (comma-separated)</label>
               <textarea class="input" id="botSymbols" rows="2" placeholder="frxEURUSD, frxGBPUSD"></textarea>
             </div>
+            <div class="settings-wide">
+              <label class="input-label" for="botSymbolSelect">Live Symbols</label>
+              <div class="symbol-toolbar">
+                <select class="select" id="botSymbolSelect"></select>
+                <button class="btn ghost" id="botAddSymbol" type="button">Add</button>
+                <button class="btn ghost" id="botUseTop" type="button">Use Top 20</button>
+                <button class="btn ghost" id="botRefreshSymbols" type="button">Refresh</button>
+              </div>
+              <p class="hint" id="botSymbolsHint">Loaded: --</p>
+            </div>
           </div>
           <div class="hero-actions">
             <button class="btn primary" id="botSave">Save Settings</button>

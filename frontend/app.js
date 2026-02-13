@@ -51,6 +51,11 @@ const botCooldown = document.getElementById("botCooldown");
 const botSymbols = document.getElementById("botSymbols");
 const botSave = document.getElementById("botSave");
 const botSettingsStatus = document.getElementById("botSettingsStatus");
+const botSymbolSelect = document.getElementById("botSymbolSelect");
+const botAddSymbol = document.getElementById("botAddSymbol");
+const botUseTop = document.getElementById("botUseTop");
+const botRefreshSymbols = document.getElementById("botRefreshSymbols");
+const botSymbolsHint = document.getElementById("botSymbolsHint");
 
 let currentSignal = "WAIT";
 let symbolMeta = {};
@@ -62,6 +67,7 @@ let tickSymbol = null;
 let tickData = [];
 let openContractDetails = {};
 let lastOpenPositions = [];
+let liveSymbols = [];
 
 const refreshAnalysis = document.getElementById("refreshAnalysis");
 const refreshScan = document.getElementById("refreshScan");
@@ -343,6 +349,7 @@ async function saveAuth() {
         body: JSON.stringify({ token: connectToken, account_mode: selected }),
       });
       appendBotLog("info", `Deriv connected (${selected})`);
+      await loadLiveSymbols();
     }
     await loadAuth();
     await loadBalance();
@@ -670,6 +677,46 @@ async function loadBotSettings() {
   }
 }
 
+async function loadLiveSymbols() {
+  if (!botSymbolSelect) return;
+  try {
+    const data = await getJSON("/api/deriv/symbols");
+    liveSymbols = data.symbols || [];
+    botSymbolSelect.innerHTML = "";
+    liveSymbols.forEach((item) => {
+      const opt = document.createElement("option");
+      opt.value = item.symbol;
+      opt.textContent = item.display_name ? `${item.display_name} (${item.symbol})` : item.symbol;
+      botSymbolSelect.appendChild(opt);
+    });
+    if (botSymbolsHint) {
+      botSymbolsHint.textContent = `Loaded: ${liveSymbols.length}`;
+    }
+  } catch (err) {
+    if (botSymbolsHint) botSymbolsHint.textContent = "Loaded: unavailable";
+  }
+}
+
+function addSelectedSymbol() {
+  if (!botSymbols || !botSymbolSelect) return;
+  const symbol = botSymbolSelect.value;
+  if (!symbol) return;
+  const existing = botSymbols.value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!existing.includes(symbol)) {
+    existing.push(symbol);
+  }
+  botSymbols.value = existing.join(", ");
+}
+
+function useTopSymbols() {
+  if (!botSymbols) return;
+  const top = liveSymbols.slice(0, 20).map((item) => item.symbol);
+  botSymbols.value = top.join(", ");
+}
+
 async function saveBotSettings() {
   if (!botSettingsStatus) return;
   const payload = {
@@ -806,6 +853,15 @@ if (botStop) {
 if (botSave) {
   botSave.addEventListener("click", saveBotSettings);
 }
+if (botAddSymbol) {
+  botAddSymbol.addEventListener("click", addSelectedSymbol);
+}
+if (botUseTop) {
+  botUseTop.addEventListener("click", useTopSymbols);
+}
+if (botRefreshSymbols) {
+  botRefreshSymbols.addEventListener("click", loadLiveSymbols);
+}
 
 async function subscribeTicks(symbol) {
   if (!symbol) return;
@@ -876,6 +932,7 @@ async function init() {
   await loadOpenContracts();
   await loadBotStatus();
   await loadBotSettings();
+  await loadLiveSymbols();
   initDerivStream();
 }
 

@@ -411,6 +411,19 @@ body {
   grid-column: 1 / -1;
 }
 
+.symbol-toolbar {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(3, minmax(90px, 0.6fr));
+  gap: 10px;
+  align-items: center;
+}
+
+@media (max-width: 720px) {
+  .symbol-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
 .log-line {
   display: flex;
   gap: 8px;
